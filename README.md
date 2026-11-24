@@ -74,7 +74,7 @@ DSH_FNOS_BUNDLE_NODE=1 node scripts/package.mjs  # 内置 Node 运行时（推�
 
 内置运行时取 `DSH_FNOS_NODE_DIR`（Node 发行版根目录），否则取当前 `node` 所在发行版。
 
-产物为 `packaging/fpk/dsh-fnos.fpk`，用飞牛应用中心安装。
+产物为 `dist/dsh-fnos.fpk`，用飞牛应用中心安装。
 
 ## 安装后
 
