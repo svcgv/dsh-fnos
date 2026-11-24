@@ -81,7 +81,9 @@ export async function normalizeModes(path, executable = false) {
 
 /** Compile TypeScript and stage the assets that `tsc` does not copy. */
 export async function build() {
-  await removeTree(join(root, 'dist'))
+  // Keep generated FPKs in dist/ when two architectures are packaged in sequence.
+  await removeTree(join(root, 'dist', 'src'))
+  await removeTree(join(root, 'dist', 'test'))
   run(process.execPath, [tsc, '-p', 'tsconfig.json'])
   await copyTree(join(root, 'src', 'ui'), join(root, 'dist', 'src', 'ui'))
   await copyTree(join(root, 'test', 'fixtures'), join(root, 'dist', 'test', 'fixtures'))

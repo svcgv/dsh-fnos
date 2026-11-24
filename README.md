@@ -3,6 +3,7 @@
 把 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)（`dsh`）以**飞牛 fnOS 原生应用**的方式发布：飞牛账号登录、统一网关入口、PC 与飞牛 App 共用界面，**按项目隔离工作区、会话与上下文**。
 
 - 应用包：原生 `.fpk`（Node 进程，无 Docker 依赖）
+- 架构：分别发布 `linux-amd64` 与 `linux-arm64`，内置对应架构的 Node.js 26
 - 入口：统一网关 `/app/dsh-fnos`
 - 身份：只信任网关转发的 `X-Trim-Userid`
 - 隔离单位：**项目**。同一用户的多个项目各自拥有 `DSH_HOME`；项目默认仅创建者可见，不支持邀请或分享
@@ -45,10 +46,10 @@
 
 ## 构建
 
-需要 Node.js 24（与上游 `engines` 对齐）与 pnpm。
+需要 Node.js 26（版本固定见 `.nvmrc` / `release.json`）、npm 与 `fnpack`。Harness 含原生依赖，amd64/arm64 payload 必须在对应架构的 Linux 环境中构建，不做交叉编译。
 
 ```sh
-npm install                 # 开发依赖（TypeScript）
+npm ci                      # 安装 Node 26 开发依赖
 node scripts/make-icons.mjs # 生成图标（已提交，可跳过）
 node scripts/test.mjs       # 类型编译 + 单元/集成测试
 ```
@@ -58,29 +59,36 @@ node scripts/test.mjs       # 类型编译 + 单元/集成测试
 默认从 npm 安装已发布的 `@deepseek-ai/dsh`（生产依赖），并裁掉 source map、类型声明和文档：
 
 ```sh
-npm run harness:payload
-# 固定版本
-DSH_HARNESS_VERSION=0.2.2-rc.5 npm run harness:payload
+npm run harness:payload -- --arch amd64   # 在 Linux x86_64 上执行
+npm run harness:payload -- --arch arm64   # 在 Linux ARM64 上执行
 ```
 
 从本地源码构建（实验性，体积大得多，且需要先 `pnpm run build`）：
 
 ```sh
-npm run harness:payload -- --from-source /vol1/1000/code/deepseek-harness
+npm run harness:payload -- --arch arm64 --from-source /vol1/1000/code/deepseek-harness
 ```
 
-两种方式都会生成 `packaging/fpk/app/harness/entry.js`。
+两种方式都会生成带架构标记的 Harness payload。发布版本固定为 `release.json` 中的 `harnessVersion`。
 
-### 2. 打包 FPK
+### 2. 构建双架构 FPK
 
 ```sh
-node scripts/package.mjs                    # 使用系统 node
-DSH_FNOS_BUNDLE_NODE=1 node scripts/package.mjs  # 内置 Node 运行时（推荐发布用）
+# 分别在原生 Linux x86_64 / ARM64 构建机上运行：
+npm run release -- --arch amd64
+npm run release -- --arch arm64
 ```
 
-内置运行时取 `DSH_FNOS_NODE_DIR`（Node 发行版根目录），否则取当前 `node` 所在发行版。
+发布脚本会完成 Harness payload、Node 26 运行时下载与 SHA-256 校验、FPK 打包、manifest 架构检查、内置 Node ELF 架构检查。产物固定为：
 
-产物为 `dist/dsh-fnos.fpk`，用飞牛应用中心安装。
+```text
+dist/dsh-fnos-<version>-linux-amd64.fpk
+dist/dsh-fnos-<version>-linux-arm64.fpk
+```
+
+GitHub Actions 的 `build-fpk` 工作流会用 `ubuntu-24.04` 与 `ubuntu-24.04-arm` 并行构建，并在汇总任务中再次验证两份产物。未配置 `FNPACK_KEY` / `FNPACK_CERT` 时生成本地验证用 unsigned FPK，不可作为正式商店发布包。
+
+开发时可复用已有 Node 发行版目录：`DSH_FNOS_NODE_DIR=/path/to/node-v26-linux-x64 npm run package:fpk -- --arch amd64`。没有完整 Harness payload 时可用 `--allow-missing-payload` 生成仅用于调试的包，该包会跳过严格发布校验。
 
 ## 安装后
 
@@ -108,7 +116,7 @@ DSH_FNOS_BUNDLE_NODE=1 node scripts/package.mjs  # 内置 Node 运行时（推�
 - 单实例模型：同一项目在 PC 与手机共用同一个 Harness 进程；空闲 30 分钟后回收。
 - 未开放 Harness 的分享、配对与 API 令牌登录。
 - Harness payload 取自 npm 发布版，体积约 1 GB；FPK 必须内置 Node 运行时才能在没有 Node 的 NAS 上启动。
-- 仅提供 x86_64 包；ARM 需要按相同流程另行构建 payload。
+- 发布提供 amd64 与 arm64 两个独立 FPK；因包含原生运行时和依赖，不使用 `platform=all` 合并包。
 
 ## 开发约定
 

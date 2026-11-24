@@ -1,54 +1,139 @@
-import { chmod, cp, mkdir, readFile, readdir, stat } from 'node:fs/promises'
+import { chmod, cp, mkdir, readFile, readdir, stat, writeFile } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
-import { dirname, join } from 'node:path'
+import { join } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import { build, copyTree, normalizeModes, removeTree, root, run } from './build.mjs'
+import { validateHarnessPayload } from './build-harness-payload.mjs'
+import { stageNodeRuntime } from './node-runtime.mjs'
+import {
+  architectureSpec,
+  loadReleaseConfig,
+  normalizeArchitecture,
+} from './release-config.mjs'
+import { verifyFpk } from './verify-fpk.mjs'
 
-await build()
-
-const fpk = join(root, 'packaging', 'fpk')
-const appServer = join(fpk, 'app', 'server')
-await removeTree(appServer)
-await copyTree(join(root, 'dist', 'src'), appServer)
-console.log('package: server staged')
-
-if (process.env.DSH_FNOS_BUNDLE_NODE === '1') {
-  const candidates = [process.env.DSH_FNOS_NODE_DIR, join(dirname(dirname(process.execPath)))]
-  const source = candidates.find((candidate) => typeof candidate === 'string' && existsSync(join(candidate, 'bin', 'node')))
-  if (source === undefined) {
-    throw new Error('DSH_FNOS_BUNDLE_NODE=1 but no Node distribution was found; set DSH_FNOS_NODE_DIR')
+function parseArgs(argv) {
+  const values = { positional: [] }
+  for (let index = 0; index < argv.length; index += 1) {
+    const argument = argv[index]
+    if (argument === '--arch' || argument === '--harness') {
+      const value = argv[index + 1]
+      if (value === undefined || value.startsWith('--')) throw new Error(`${argument} requires a value`)
+      values[argument.slice(2)] = value
+      index += 1
+    } else if (argument === '--allow-missing-payload' || argument === '--without-node') {
+      values[argument === '--without-node' ? 'withoutNode' : 'allowMissingPayload'] = true
+    } else if (argument.startsWith('--')) {
+      throw new Error(`unknown argument ${argument}`)
+    } else {
+      values.positional.push(argument)
+    }
   }
-  const target = join(fpk, 'app', 'runtime', 'node', 'bin')
-  await removeTree(join(fpk, 'app', 'runtime'))
-  await cp(join(source, 'bin', 'node'), join(target, 'node'))
-  await chmod(join(target, 'node'), 0o755)
-  await cp(join(source, 'LICENSE'), join(fpk, 'app', 'runtime', 'node', 'LICENSE')).catch(() => undefined)
-  const size = (await stat(join(target, 'node'))).size
-  console.log(`package: bundled node ${source} (${(size / 1024 / 1024).toFixed(0)} MiB)`)
+  return values
 }
 
-if (!existsSync(join(fpk, 'app', 'harness', 'entry.js'))) {
-  console.warn('package: app/harness/entry.js missing; run scripts/build-harness-payload.mjs before publishing')
+function fnpackArgs(stageRoot) {
+  const args = ['build', '--directory', join(stageRoot, 'fpk')]
+  const key = process.env.FNPACK_KEY
+  const cert = process.env.FNPACK_CERT
+  if (key !== undefined && cert !== undefined) {
+    args.push('--key', key, '--cert', cert)
+  } else {
+    args.push('--nosign')
+  }
+  return args
 }
 
-// fnpack copies stat modes verbatim; normalize them first (see docs/development.md).
-await normalizeModes(fpk, false)
-for (const script of await readdir(join(fpk, 'cmd'))) {
-  await chmod(join(fpk, 'cmd', script), 0o755)
-}
-await chmod(join(fpk, 'manifest'), 0o644)
-const bundledNode = join(fpk, 'app', 'runtime', 'node', 'bin', 'node')
-if (existsSync(bundledNode)) await chmod(bundledNode, 0o755)
+/** Build one complete, architecture-specific fnOS FPK artifact. */
+export async function packageFpk(options) {
+  const config = await loadReleaseConfig()
+  const target = architectureSpec(options.arch)
+  if (!config.architectures.includes(target.id)) {
+    throw new Error(`release.json does not list ${target.id}`)
+  }
+  await build()
 
-run(process.env.FNPACK ?? 'fnpack', ['build', '--directory', fpk])
+  const stageRoot = join(root, '.local', 'build', `fpk-${target.id}`)
+  const stageFpk = join(stageRoot, 'fpk')
+  await removeTree(stageRoot)
+  await mkdir(stageRoot, { recursive: true })
+  await copyTree(join(root, 'packaging', 'fpk'), stageFpk)
+  const appServer = join(stageFpk, 'app', 'server')
+  await removeTree(appServer)
+  await removeTree(join(stageFpk, 'app', 'harness'))
+  await removeTree(join(stageFpk, 'app', 'runtime'))
+  await copyTree(join(root, 'dist', 'src'), appServer)
+  console.log(`package: server staged for ${target.id}`)
 
-const manifest = await readFile(join(fpk, 'manifest'), 'utf8')
-const appName = /^appname\s*=\s*(\S+)/mu.exec(manifest)?.[1]
-const produced = appName === undefined ? undefined : join(root, `${appName}.fpk`)
-if (produced !== undefined && existsSync(produced)) {
+  if (options.harnessDir !== undefined) {
+    await validateHarnessPayload(options.harnessDir, target.id)
+    await copyTree(options.harnessDir, join(stageFpk, 'app', 'harness'))
+  } else if (!options.allowMissingPayload) {
+    throw new Error('Harness payload is required; run scripts/build-harness-payload.mjs or pass --harness')
+  } else {
+    console.warn('package: Harness payload missing; artifact is development-only')
+  }
+
+  const nodeVersion = options.nodeVersion ?? config.nodeVersion
+  if (!options.withoutNode) {
+    const runtimeDir = join(stageFpk, 'app', 'runtime', 'node')
+    const source = await stageNodeRuntime(runtimeDir, {
+      arch: target.id,
+      version: nodeVersion,
+      sourceDir: options.nodeDir ?? process.env.DSH_FNOS_NODE_DIR,
+    })
+    const size = (await stat(join(runtimeDir, 'bin', 'node'))).size
+    console.log(`package: bundled Node ${nodeVersion} ${target.id} from ${source} (${(size / 1024 / 1024).toFixed(0)} MiB)`)
+  }
+
+  const manifestPath = join(stageFpk, 'manifest')
+  const manifest = await readFile(manifestPath, 'utf8')
+  const rewritten = manifest.replace(/^platform\s*=\s*.*$/mu, `platform               = ${target.fnosPlatform}`)
+  if (rewritten === manifest) throw new Error(`manifest has no platform field: ${manifestPath}`)
+  await writeFile(manifestPath, rewritten)
+
+  // fnpack copies stat modes verbatim; normalize ACL-managed modes first.
+  await normalizeModes(stageFpk, false)
+  for (const script of await readdir(join(stageFpk, 'cmd'))) {
+    await chmod(join(stageFpk, 'cmd', script), 0o755)
+  }
+  await chmod(manifestPath, 0o644)
+  const bundledNode = join(stageFpk, 'app', 'runtime', 'node', 'bin', 'node')
+  if (existsSync(bundledNode)) await chmod(bundledNode, 0o755)
+
+  run(process.env.FNPACK ?? 'fnpack', fnpackArgs(stageRoot), { cwd: stageRoot })
+  const produced = join(stageRoot, 'dsh-fnos.fpk')
+  if (!existsSync(produced)) throw new Error(`fnpack did not create ${produced}`)
+
+  const packageJson = JSON.parse(await readFile(join(root, 'package.json'), 'utf8'))
+  const artifact = join(root, 'dist', `dsh-fnos-${packageJson.version}-linux-${target.id}.fpk`)
   await mkdir(join(root, 'dist'), { recursive: true })
-  const artifact = join(root, 'dist', `${appName}.fpk`)
   await cp(produced, artifact)
   await chmod(artifact, 0o644)
-  await removeTree(produced)
+  if (options.allowMissingPayload || options.withoutNode) {
+    console.warn('package: development artifact produced; strict release verification was skipped')
+    return { artifact, summary: undefined }
+  }
+  const summary = await verifyFpk(artifact, target.id)
   console.log(`package: ${artifact}`)
+  console.log(`package: sha256 ${summary.sha256}`)
+  return { artifact, summary }
+}
+
+async function main() {
+  const args = parseArgs(process.argv.slice(2))
+  const config = await loadReleaseConfig()
+  const arch = normalizeArchitecture(args.arch ?? process.env.DSH_FNOS_ARCH ?? process.arch)
+  const harnessDir = args.harness ?? process.env.DSH_FNOS_HARNESS_PAYLOAD ?? join(root, 'packaging', 'fpk', 'app', 'harness')
+  return packageFpk({
+    arch,
+    harnessDir: existsSync(join(harnessDir, 'entry.js')) ? harnessDir : undefined,
+    allowMissingPayload: args.allowMissingPayload,
+    withoutNode: args.withoutNode,
+    nodeVersion: config.nodeVersion,
+  })
+}
+
+if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  await main()
 }

@@ -6,7 +6,7 @@
   "license": "MIT",
   "type": "module",
   "engines": {
-    "node": ">=22"
+    "node": ">=26 <27"
   },
   "scripts": {
     "build": "node scripts/build.mjs",
@@ -15,13 +15,18 @@
     "verify": "node scripts/test.mjs --verify",
     "icons": "node scripts/make-icons.mjs",
     "package:fpk": "node scripts/package.mjs",
+    "package:amd64": "node scripts/package.mjs --arch amd64",
+    "package:arm64": "node scripts/package.mjs --arch arm64",
     "harness:payload": "node scripts/build-harness-payload.mjs",
     "smoke": "node scripts/smoke.mjs",
-    "release": "node scripts/build-harness-payload.mjs && node scripts/package.mjs",
+    "verify:fpk": "node scripts/verify-fpk.mjs",
+    "release": "node scripts/release.mjs",
+    "release:amd64": "node scripts/release.mjs --arch amd64",
+    "release:arm64": "node scripts/release.mjs --arch arm64",
     "dev": "node scripts/dev.mjs"
   },
   "devDependencies": {
-    "@types/node": "^24.10.1",
+    "@types/node": "^26.6.6",
     "typescript": "^5.9.3"
   }
 }

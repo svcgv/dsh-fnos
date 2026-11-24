@@ -6,10 +6,15 @@ import { build, root } from './build.mjs'
 await build()
 
 const testDir = join(root, 'dist', 'test')
-const files = (await readdir(testDir))
+const compiledFiles = (await readdir(testDir))
   .filter((name) => name.endsWith('.test.js'))
   .sort()
   .map((name) => join(testDir, name))
+const scriptFiles = (await readdir(join(root, 'test')))
+  .filter((name) => name.endsWith('.test.mjs'))
+  .sort()
+  .map((name) => join(root, 'test', name))
+const files = [...compiledFiles, ...scriptFiles]
 
 if (files.length === 0) {
   console.error('test: no compiled test files found')

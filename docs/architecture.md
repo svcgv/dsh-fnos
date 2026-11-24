@@ -23,6 +23,17 @@
 | HTTP 层 | 路由、静态 UI、JSON API、权限判断 | `src/server.ts` |
 | 入口 | 监听 Unix Socket、优雅退出 | `src/index.ts` |
 
+## 发布架构
+
+fnOS 的 `manifest.platform` 只允许 `x86`、`arm`、`all`。本应用的 Harness payload 与内置 Node 运行时包含架构相关二进制，因此不能用 `all` 表示双架构；发布链会生成两个独立 FPK：
+
+| 产物 | manifest | 内置运行时 | 适用设备 |
+| --- | --- | --- | --- |
+| `dsh-fnos-<version>-linux-amd64.fpk` | `platform=x86` | Node 26 `linux-x64` | x86_64 NAS |
+| `dsh-fnos-<version>-linux-arm64.fpk` | `platform=arm` | Node 26 `linux-arm64` | ARM64 NAS |
+
+打包脚本先在独立 staging 目录写入对应 manifest，再调用 `fnpack`，避免源码模板与实际产物架构不一致。打包后验证器会解包 FPK，检查 Node ELF 的 `e_machine` 与 Harness payload 的架构标记。原生日志依赖必须在同架构 Linux runner 上安装，不能由单架构构建机复制生成。
+
 ## 请求生命周期
 
 ```text
@@ -82,4 +93,4 @@ GET /app/dsh-fnos/p/<id>/api/echo
 1. 接入飞牛个人目录授权（`pickUserFile` + `trim.file.checkUserACL`），把授权目录映射为项目工作区。
 2. 项目级进程沙箱（Landlock/bwrap）或独立运行身份。
 3. 多实例负载与项目数量配额。
-4. ARM 构建与自动发布流水线。
+4. 基于签名证书的自动发布与商店上架。

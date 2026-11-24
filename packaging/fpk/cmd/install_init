@@ -1,7 +1,27 @@
 #!/bin/bash
 ### Runs before the package is installed.
 set -u
-if [ "${TRIM_SYS_ARCH:-}" != "" ] && [ "${TRIM_SYS_ARCH}" != "x86_64" ]; then
-    echo "当前应用包仅包含 x86_64 运行时，检测到架构 ${TRIM_SYS_ARCH}" >>"${TRIM_TEMP_LOGFILE:-/dev/null}"
+
+SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
+MANIFEST="${SCRIPT_DIR}/../manifest"
+
+normalize_arch() {
+    case "$1" in
+        x86_64|amd64|x64) printf '%s' x86 ;;
+        aarch64|arm64) printf '%s' arm ;;
+        *) printf '%s' "$1" ;;
+    esac
+}
+
+expected="$(awk -F= '/^[[:space:]]*platform[[:space:]]*=/ { gsub(/[[:space:]]/, "", $2); print $2; exit }' "${MANIFEST}" 2>/dev/null)"
+actual="$(normalize_arch "${TRIM_SYS_ARCH:-$(uname -m)}")"
+
+if [ -z "${expected}" ] || { [ "${expected}" != "x86" ] && [ "${expected}" != "arm" ] && [ "${expected}" != "all" ]; }; then
+    echo "应用包 manifest 的 platform 无效：${expected:-<missing>}" >>"${TRIM_TEMP_LOGFILE:-/dev/null}"
+    exit 1
+fi
+if [ "${expected}" != "all" ] && [ "${actual}" != "${expected}" ]; then
+    echo "应用包架构不匹配：需要 ${expected}，当前设备为 ${TRIM_SYS_ARCH:-$(uname -m)}" >>"${TRIM_TEMP_LOGFILE:-/dev/null}"
+    exit 1
 fi
 exit 0

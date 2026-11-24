@@ -2,6 +2,7 @@ node_modules/
 dist/
 .local/
 *.log
+/*.fpk
 .DS_Store
 
 # Generated package payloads
