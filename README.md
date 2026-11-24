@@ -55,15 +55,21 @@ node scripts/test.mjs       # 类型编译 + 单元/集成测试
 
 ### 1. 准备上游 Harness 产物
 
-```sh
-# 在上游仓库完成构建
-pnpm install && pnpm run build
+默认从 npm 安装已发布的 `@deepseek-ai/dsh`（生产依赖），并裁掉 source map、类型声明和文档：
 
-# 生成可搬运的 payload（pnpm deploy，自带工作区依赖）
-node scripts/build-harness-payload.mjs
+```sh
+npm run harness:payload
+# 固定版本
+DSH_HARNESS_VERSION=0.2.2-rc.5 npm run harness:payload
 ```
 
-生成 `packaging/fpk/app/harness/entry.js`。默认读取 `DSH_HARNESS_SOURCE`（`/vol1/1000/code/deepseek-harness`）。
+从本地源码构建（实验性，体积大得多，且需要先 `pnpm run build`）：
+
+```sh
+npm run harness:payload -- --from-source /vol1/1000/code/deepseek-harness
+```
+
+两种方式都会生成 `packaging/fpk/app/harness/entry.js`。
 
 ### 2. 打包 FPK
 
@@ -101,6 +107,7 @@ DSH_FNOS_BUNDLE_NODE=1 node scripts/package.mjs  # 内置 Node 运行时（推�
 - 共享插件通过 profile 软链实现，插件安装/升级由管理员在共享目录完成。
 - 单实例模型：同一项目在 PC 与手机共用同一个 Harness 进程；空闲 30 分钟后回收。
 - 未开放 Harness 的分享、配对与 API 令牌登录。
+- Harness payload 取自 npm 发布版，体积约 1 GB；FPK 必须内置 Node 运行时才能在没有 Node 的 NAS 上启动。
 - 仅提供 x86_64 包；ARM 需要按相同流程另行构建 payload。
 
 ## 开发约定
