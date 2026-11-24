@@ -1,0 +1,14 @@
+{
+  ".url": {
+    "dsh-fnos.main": {
+      "title": "DeepSeek Harness",
+      "icon": "images/icon_{0}.png",
+      "type": "iframe",
+      "protocol": "",
+      "gatewayPrefix": "/app/dsh-fnos",
+      "gatewaySocket": "app.sock",
+      "url": "/app/dsh-fnos/",
+      "allUsers": true
+    }
+  }
+}

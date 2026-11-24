@@ -1,0 +1,21 @@
+appname               = dsh-fnos
+version               = 0.1.0
+display_name          = DeepSeek Harness
+desc                  = 原生运行的 DeepSeek Harness，按项目隔离工作区、会话与上下文，通过飞牛统一网关登录。
+source                = thirdparty
+platform              = x86
+
+maintainer            = dsh-fnos
+maintainer_url        = https://github.com/deepseek-ai/deepseek-harness
+distributor           = dsh-fnos
+
+os_min_version        = 1.2.0401
+
+desktop_uidir         = ui
+desktop_applaunchname = dsh-fnos.main
+
+ctl_stop              = true
+checkport             = false
+disable_authorization_path = false
+
+changelog             = 首个开发预览版本：飞牛统一网关入口、按用户与项目隔离的 Harness 实例。

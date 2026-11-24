@@ -1,0 +1,27 @@
+{
+  "name": "dsh-fnos",
+  "version": "0.1.0",
+  "private": true,
+  "description": "DeepSeek Harness for fnOS: native gateway app with per-project isolation",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "node scripts/test.mjs",
+    "verify": "node scripts/test.mjs --verify",
+    "icons": "node scripts/make-icons.mjs",
+    "package:fpk": "node scripts/package.mjs",
+    "harness:payload": "node scripts/build-harness-payload.mjs",
+    "smoke": "node scripts/smoke.mjs",
+    "release": "node scripts/build-harness-payload.mjs && node scripts/package.mjs",
+    "dev": "node scripts/dev.mjs"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.1",
+    "typescript": "^5.9.3"
+  }
+}

@@ -1,0 +1,11 @@
+node_modules/
+dist/
+.local/
+*.log
+.DS_Store
+
+# Generated package payloads
+packaging/fpk/app/server/
+packaging/fpk/app/harness/
+packaging/fpk/app/runtime/
+packaging/fpk/*.fpk

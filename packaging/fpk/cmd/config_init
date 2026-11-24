@@ -1,0 +1,5 @@
+#!/bin/bash
+### Runs before a configuration change.
+set -u
+"${TRIM_APPDEST}/cmd/main" stop
+exit 0

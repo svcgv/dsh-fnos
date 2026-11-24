@@ -1,0 +1,5 @@
+#!/bin/bash
+### Runs after a configuration change: pick up new shared env or runtime settings.
+set -u
+"${TRIM_APPDEST}/cmd/main" start
+exit 0

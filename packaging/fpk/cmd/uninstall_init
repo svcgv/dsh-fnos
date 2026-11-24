@@ -1,0 +1,5 @@
+#!/bin/bash
+### Runs before uninstall. Stop instances but keep user data.
+set -u
+"${TRIM_APPDEST}/cmd/main" stop
+exit 0

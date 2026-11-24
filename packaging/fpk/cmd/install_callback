@@ -1,0 +1,10 @@
+#!/bin/bash
+### Runs after the package is installed.
+set -u
+mkdir -p "${TRIM_PKGVAR}" "${TRIM_PKGHOME}"
+LOG="${TRIM_PKGVAR}/dsh-fnos.log"
+{
+    echo "$(date '+%Y-%m-%d %H:%M:%S') - installed ${TRIM_APPNAME:-dsh-fnos} ${TRIM_APPVER:-}"
+    [ -f "${TRIM_APPDEST}/harness/entry.js" ] || echo "WARN: harness payload missing; rebuild the package with scripts/build-harness-payload.mjs"
+} >>"${LOG}"
+exit 0

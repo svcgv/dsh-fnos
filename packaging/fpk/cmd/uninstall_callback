@@ -1,0 +1,4 @@
+#!/bin/bash
+### Runs after uninstall. Project data stays for reinstall or manual recovery.
+set -u
+exit 0

@@ -1,0 +1,122 @@
+#!/bin/bash
+# Start, stop and report the dsh-fnos supervisor.
+set -u
+
+APP="${TRIM_APPDEST:?}"
+VAR="${TRIM_PKGVAR:?}"
+LOG="${VAR}/dsh-fnos.log"
+PID_FILE="${VAR}/dsh-fnos.pid"
+NODE=""
+
+log_msg() {
+    echo "$(date '+%Y-%m-%d %H:%M:%S') - $*" >>"${LOG}"
+}
+
+fail() {
+    log_msg "ERROR: $*"
+    if [ -n "${TRIM_TEMP_LOGFILE:-}" ]; then
+        printf '%s\n' "$*" >>"${TRIM_TEMP_LOGFILE}"
+    fi
+    exit 1
+}
+
+pick_node() {
+    if [ -x "${APP}/runtime/node/bin/node" ]; then
+        printf '%s' "${APP}/runtime/node/bin/node"
+        return 0
+    fi
+    if command -v node >/dev/null 2>&1; then
+        command -v node
+        return 0
+    fi
+    if [ -x /var/apps/nodejs_v22/target/bin/node ]; then
+        printf '%s' /var/apps/nodejs_v22/target/bin/node
+        return 0
+    fi
+    return 1
+}
+
+read_pid() {
+    if [ -r "${PID_FILE}" ]; then
+        tr -d '[:space:]' <"${PID_FILE}"
+    fi
+}
+
+is_running() {
+    local pid
+    pid="$(read_pid)"
+    [ -n "${pid}" ] && kill -0 "${pid}" 2>/dev/null
+}
+
+start() {
+    if is_running; then
+        return 0
+    fi
+
+    NODE="$(pick_node)" || fail "未找到可用的 Node.js 运行时（需要 22 或更高版本）"
+    [ -f "${APP}/server/index.js" ] || fail "应用文件不完整：缺少 server/index.js"
+    [ -f "${APP}/harness/entry.js" ] || log_msg "WARN: 缺少 harness/entry.js，打开项目时会启动失败"
+
+    mkdir -p "${VAR}"
+    log_msg "starting with ${NODE}"
+    cd "${APP}" || fail "无法进入应用目录"
+    nohup "${NODE}" "${APP}/server/index.js" >>"${LOG}" 2>&1 &
+    printf '%s' "$!" >"${PID_FILE}"
+
+    local waited=0
+    while [ "${waited}" -lt 30 ]; do
+        if is_running && [ -S "${APP}/app.sock" ]; then
+            log_msg "started pid=$(read_pid)"
+            return 0
+        fi
+        sleep 1
+        waited=$((waited + 1))
+    done
+
+    fail "服务启动超时，请查看 ${LOG}"
+}
+
+stop() {
+    if ! is_running; then
+        rm -f "${PID_FILE}"
+        return 0
+    fi
+
+    local pid
+    pid="$(read_pid)"
+    log_msg "stopping pid=${pid}"
+    kill -TERM "${pid}" 2>/dev/null
+
+    local waited=0
+    while kill -0 "${pid}" 2>/dev/null && [ "${waited}" -lt 20 ]; do
+        sleep 1
+        waited=$((waited + 1))
+    done
+
+    if kill -0 "${pid}" 2>/dev/null; then
+        log_msg "killing pid=${pid}"
+        kill -KILL "${pid}" 2>/dev/null
+    fi
+
+    rm -f "${PID_FILE}" "${APP}/app.sock"
+    return 0
+}
+
+case "${1:-}" in
+    start)
+        start
+        ;;
+    stop)
+        stop
+        ;;
+    status)
+        if is_running; then
+            exit 0
+        fi
+        exit 3
+        ;;
+    *)
+        printf 'Unknown command: %s\n' "${1:-}" >&2
+        exit 1
+        ;;
+esac

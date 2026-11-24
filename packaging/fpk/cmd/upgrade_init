@@ -1,0 +1,6 @@
+#!/bin/bash
+### Runs before an upgrade. User data under TRIM_PKGHOME is never rewritten here.
+set -u
+"${TRIM_APPDEST}/cmd/main" stop
+echo "$(date '+%Y-%m-%d %H:%M:%S') - upgrading from ${TRIM_OLD_APPVER:-unknown} to ${TRIM_APPVER:-unknown}" >>"${TRIM_PKGVAR}/dsh-fnos.log"
+exit 0

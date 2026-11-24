@@ -1,0 +1,5 @@
+#!/bin/bash
+### Runs after an upgrade.
+set -u
+echo "$(date '+%Y-%m-%d %H:%M:%S') - upgraded to ${TRIM_APPVER:-unknown}" >>"${TRIM_PKGVAR}/dsh-fnos.log"
+exit 0
