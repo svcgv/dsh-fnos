@@ -1,0 +1,72 @@
+scripts/build.mjs
+  s_bc712ba9106abc::t_f54007623723c6 84-86
+.node-version
+  s_bc712ba9106abc::t_6189a7518b6582 1
+docs/development.md
+  s_bc712ba9106abc::t_d54f0ea01efa51 5,11-52,99,102,118-124
+.github/workflows/build-fpk.yml
+  s_bc712ba9106abc::t_715b3538343543 1-2,4-5,8-77
+  s_bc712ba9106abc::t_8dbdf564a31995 3
+  s_bc712ba9106abc::t_ef1de517096d0e 6-7
+scripts/verify-fpk.mjs
+  s_bc712ba9106abc::t_c0084cd7ce41c1 1-60,64-107
+  s_bc712ba9106abc::t_b2294a1cbb2206 61-63
+package.json
+  s_bc712ba9106abc::t_6189a7518b6582 9,18-19,22-25,29
+scripts/build-harness-payload.mjs
+  s_bc712ba9106abc::t_3382dc7addfab4 2-3,5-12,14-18,20-35,55-116,118-134,136-152
+  s_bc712ba9106abc::t_05a8b94314ecd5 4
+test/release-config.test.mjs
+  s_bc712ba9106abc::t_2e7fecb572c5bc 1,5,7-55,72
+  s_bc712ba9106abc::t_d54f0ea01efa51 2-4,6,56-71
+docs/architecture.md
+  s_bc712ba9106abc::t_c38f278a0edd58 26-36,96
+docs/operations.md
+  s_bc712ba9106abc::t_c38f278a0edd58 5-8,84-85
+release.json
+  s_bc712ba9106abc::t_6189a7518b6582 1-8
+scripts/package.mjs
+  s_bc712ba9106abc::t_30ccf637e3c3f2 3-4,6-13,15-30,32,35-44,47-62,65-92,95-102,104-109,117,119-138
+  s_bc712ba9106abc::t_b2294a1cbb2206 63-64
+  s_bc712ba9106abc::t_05a8b94314ecd5 1,93,113-116
+scripts/release.mjs
+  s_bc712ba9106abc::t_05a8b94314ecd5 1-48
+scripts/test.mjs
+  s_bc712ba9106abc::t_2e7fecb572c5bc 9,13-17
+.gitignore
+  s_bc712ba9106abc::t_b2294a1cbb2206 5
+packaging/fpk/cmd/main
+  s_bc712ba9106abc::t_b2294a1cbb2206 25-29,31-32,34-45
+  s_bc712ba9106abc::t_8dbdf564a31995 30
+  s_bc712ba9106abc::t_3bfd8ed5bdb96f 23-24,66
+.nvmrc
+  s_bc712ba9106abc::t_6189a7518b6582 1
+packaging/fpk/cmd/install_init
+  s_bc712ba9106abc::t_3bfd8ed5bdb96f 4-25
+AGENTS.md
+  s_bc712ba9106abc::t_38f95e69d8fae2 1-32
+README.md
+  s_bc712ba9106abc::t_7d9630510fda39 6,49,52,62-63,69,72,74,77-79,82,84-91,119
+package-lock.json
+  s_bc712ba9106abc::t_182ab8b324500a 12,16,20-22,26,44-46
+scripts/node-runtime.mjs
+  s_bc712ba9106abc::t_de80ae4464ef86 1-108
+scripts/release-config.mjs
+  s_bc712ba9106abc::t_87bb5a7b87c421 1-98
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "b31cf9d5730f0bdc28c6b3783d1909b6cdcf79ed",
+  "prompts": {},
+  "sessions": {
+    "s_bc712ba9106abc": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a20cfc-2d0b-7982-b515-b2eed53c118b",
+        "model": "deepseek-v4.1-flash"
+      },
+      "human_author": "svcgv <hb1230123@hotmail.com>"
+    }
+  }
+}
