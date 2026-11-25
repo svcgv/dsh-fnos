@@ -1,0 +1,25 @@
+package.json
+  s_bc712ba9106abc::t_89fc6e3c7f1291 3
+packaging/fpk/manifest
+  s_bc712ba9106abc::t_89fc6e3c7f1291 2,21
+scripts/build-harness-payload.mjs
+  s_bc712ba9106abc::t_89fc6e3c7f1291 103-107,124,135-142
+package-lock.json
+  s_bc712ba9106abc::t_9879fe786f7867 3,9
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "909bb7520003544b1fc7af8453da6b09ad92d4ab",
+  "prompts": {},
+  "sessions": {
+    "s_bc712ba9106abc": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a20cfc-2d0b-7982-b515-b2eed53c118b",
+        "model": "deepseek-v4.1-flash"
+      },
+      "human_author": "svcgv <hb1230123@hotmail.com>"
+    }
+  }
+}
