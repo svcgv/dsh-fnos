@@ -1,0 +1,50 @@
+src/workspaces.ts
+  s_bc712ba9106abc::t_fd6c81e3fd69b7 1-154,158-354,356,358-364
+  s_bc712ba9106abc::t_b818a69ce6b647 155-157,355,357
+src/index.ts
+  s_bc712ba9106abc::t_a8fe5a171cbcbb 9,16
+package.json
+  s_bc712ba9106abc::t_a24983e0a603c5 3
+src/server.ts
+  s_bc712ba9106abc::t_64b6c02d1f737e 8,10,15,59-61,65-70,73-74,77,80-82,91,112,118,122,124-127,130-136,140-143,147-148,152-154,160-164,182,194-195
+packaging/fpk/manifest
+  s_bc712ba9106abc::t_a24983e0a603c5 2,4,21
+test/server.test.ts
+  s_bc712ba9106abc::t_cfdca88e296358 2,13,19,48,60,73,78-80,82-83,85,90-94,96-97,99-107,113,116-120,122-126,132,135,142,145,152
+AGENTS.md
+  s_bc712ba9106abc::t_5e3c06adff5360 10-17
+README.md
+  s_bc712ba9106abc::t_a619b50edafffc 3,9-10,19-21,24-25,30-33,41-44,97-98,104,110-112,116-118
+docs/architecture.md
+  s_bc712ba9106abc::t_e364bdb68999d2 5,9,11,20-21,50,53-54,65,70,78,80,82,88,90-109,120-122
+docs/development.md
+  s_bc712ba9106abc::t_8063c38345386c 54-61,68,81-83,90,102,110,132-133
+docs/operations.md
+  s_bc712ba9106abc::t_609eee6b7c46a3 14,29,40,58,65,69,75,83,86,90,96-97
+package-lock.json
+  s_bc712ba9106abc::t_68c6b733d0d8f5 3,9
+packaging/fpk/cmd/main
+  s_bc712ba9106abc::t_79bc6cc6789b1f 89
+scripts/smoke.mjs
+  s_bc712ba9106abc::t_4abd5ae2ebda19 8-9,54,58
+src/harness.ts
+  s_bc712ba9106abc::t_df5634d9bfd3b3 10,15,19,33,71,113,120,125-126,136,155-156,179,197-199,237
+test/workspaces.test.ts
+  s_bc712ba9106abc::t_9c7167b0fe2a71 2,7,9-10,12-13,16-36,38-52,55-87,90-105,108-128,131,133-146
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "1eb62b35ed038c1a884f7e0af422e3d661138c93",
+  "prompts": {},
+  "sessions": {
+    "s_bc712ba9106abc": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a20cfc-2d0b-7982-b515-b2eed53c118b",
+        "model": "deepseek-v4.1-flash"
+      },
+      "human_author": "svcgv <hb1230123@hotmail.com>"
+    }
+  }
+}
