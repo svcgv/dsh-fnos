@@ -103,6 +103,8 @@ GitHub Actions 的 `build-fpk` 工作流会用 `ubuntu-24.04` 与 `ubuntu-24.04-
 
    重启应用后该用户的工作区会读取共享密钥。
 
+会话侧栏终端默认使用 `/bin/bash`，不使用飞牛应用账号的登录 Shell。管理员可在 `shared.env` 中设置 `SHELL` 为另一个可执行的交互式 Shell 的绝对路径，重启应用后生效。
+
 ## 升级与迁移
 
 - 应用版本、Harness payload 与 libatomic 兼容库随 FPK 一起升级；Node.js 26 由飞牛 `nodejs_v26` 插件维护。

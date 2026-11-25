@@ -186,6 +186,8 @@ export class HarnessManager {
     return {
       ...env,
       ...sharedEnv,
+      // The fnOS service account may use nologin; give Harness an interactive shell.
+      SHELL: sharedEnv.SHELL || '/bin/bash',
       DSH_HOME: paths.dshHome,
       DSH_AGENTS_HOME: paths.agentsHome,
       HOME: paths.home,

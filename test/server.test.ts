@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdtemp, mkdir, readFile, writeFile } from 'node:fs/promises'
+import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { createServer, type Server } from 'node:http'
 import { connect } from 'node:net'
 import { tmpdir } from 'node:os'
@@ -20,7 +20,7 @@ interface Harness {
   readonly close: () => Promise<void>
 }
 
-async function startHarness(): Promise<Harness> {
+async function startHarness(sharedEnv = 'MOCK_SHARED=shared-yes\n'): Promise<Harness> {
   const root = await mkdtemp(join(tmpdir(), 'dsh-fnos-http-'))
   const appDest = join(root, 'app')
   const pkgEtc = join(root, 'etc')
@@ -28,7 +28,7 @@ async function startHarness(): Promise<Harness> {
   const pkgHome = join(root, 'home')
   await mkdir(appDest, { recursive: true })
   await mkdir(pkgEtc, { recursive: true })
-  await writeFile(join(pkgEtc, 'shared.env'), 'MOCK_SHARED=shared-yes\n')
+  await writeFile(join(pkgEtc, 'shared.env'), sharedEnv)
 
   const config: AppConfig = {
     appName: 'dsh-fnos',
@@ -62,6 +62,7 @@ async function startHarness(): Promise<Harness> {
       await manager.stopAll()
       server.closeAllConnections()
       await new Promise<void>((resolve) => server.close(() => resolve()))
+      await rm(root, { recursive: true, force: true })
     },
   }
 }
@@ -107,6 +108,34 @@ test('root opens one isolated workspace per NAS user', { timeout: 60_000 }, asyn
     assert.notEqual(otherPayload.dshHome, payload.dshHome)
   } finally {
     await harness.close()
+  }
+})
+
+test('workspace Harness uses an interactive shell instead of the service shell', { timeout: 60_000 }, async (t) => {
+  const previousShell = process.env.SHELL
+  t.after(() => {
+    if (previousShell === undefined) delete process.env.SHELL
+    else process.env.SHELL = previousShell
+  })
+
+  const cases = [
+    { serviceShell: undefined, sharedEnv: '', expected: '/bin/bash' },
+    { serviceShell: '/usr/sbin/nologin', sharedEnv: '', expected: '/bin/bash' },
+    { serviceShell: '/usr/sbin/nologin', sharedEnv: 'SHELL=\n', expected: '/bin/bash' },
+    { serviceShell: '/usr/sbin/nologin', sharedEnv: 'SHELL=/bin/sh\n', expected: '/bin/sh' },
+  ]
+  for (const { serviceShell, sharedEnv, expected } of cases) {
+    if (serviceShell === undefined) delete process.env.SHELL
+    else process.env.SHELL = serviceShell
+    const harness = await startHarness(sharedEnv)
+    try {
+      const echo = await fetch(`${harness.base}/app/dsh-fnos/workspace/api/echo`, { headers: headers('1000') })
+      assert.equal(echo.status, 200)
+      const payload = await echo.json() as { shell: string | null }
+      assert.equal(payload.shell, expected)
+    } finally {
+      await harness.close()
+    }
   }
 })
 

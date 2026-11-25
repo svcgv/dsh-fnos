@@ -48,6 +48,7 @@ const server = createServer((req, res) => {
       cookie: req.headers.cookie ?? null,
       origin: req.headers.origin ?? null,
       shared: process.env.MOCK_SHARED ?? null,
+      shell: process.env.SHELL ?? null,
       dshHome: process.env.DSH_HOME ?? null,
       leakedTrimToken: process.env.TRIM_API_TOKEN ?? null,
     }))
