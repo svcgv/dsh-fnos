@@ -1,5 +1,5 @@
 appname               = dsh-fnos
-version               = 0.1.1
+version               = 0.1.2
 display_name          = DeepSeek Harness
 desc                  = 原生运行的 DeepSeek Harness，按项目隔离工作区、会话与上下文，通过飞牛统一网关登录。
 source                = thirdparty
@@ -18,5 +18,5 @@ ctl_stop              = true
 checkport             = false
 disable_authorization_path = false
 
-changelog             = 0.1.1：改用飞牛 nodejs_v26 运行时依赖，并内置 libatomic 兼容库。
+changelog             = 0.1.2：修复 Harness CLI 入口，显式调用 runCli 并声明 ESM 模块类型。
 install_dep_apps      = nodejs_v26

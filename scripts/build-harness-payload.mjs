@@ -100,7 +100,11 @@ export async function buildHarnessPayload(options) {
     ].find((candidate) => existsSync(candidate))
     if (entry === undefined) throw new Error(`deployed harness has no lib/bin.js under ${dest}`)
   } else {
-    await writeFile(join(dest, 'package.json'), `${JSON.stringify({ name: 'dsh-fnos-harness', private: true }, undefined, 2)}\n`)
+    await writeFile(join(dest, 'package.json'), `${JSON.stringify({
+      name: 'dsh-fnos-harness',
+      private: true,
+      type: 'module',
+    }, undefined, 2)}\n`)
     runChecked(process.env.NPM ?? 'npm', [
       'install',
       '--omit=dev',
@@ -117,7 +121,7 @@ export async function buildHarnessPayload(options) {
 
   await prune(dest)
   const relative = entry.slice(dest.length + 1).split('\\').join('/')
-  await writeFile(join(dest, 'entry.js'), `import './${relative}'\n`)
+  await writeFile(join(dest, 'entry.js'), `import { runCli } from './${relative}'\n\nawait runCli()\n`)
   await writeFile(join(dest, '.dsh-fnos-arch.json'), `${JSON.stringify({
     architecture: target.id,
     fnosPlatform: target.fnosPlatform,
@@ -128,6 +132,14 @@ export async function buildHarnessPayload(options) {
   // pnpm/npm copy source modes; `trimacl` reports 000 for ACL-managed files.
   await normalizeModes(dest, false)
   await validateHarnessPayload(dest, target.id)
+  const smoke = spawnSync(process.execPath, [join(dest, 'entry.js'), '--version'], {
+    encoding: 'utf8',
+    cwd: dest,
+  })
+  if (smoke.error !== undefined) throw smoke.error
+  if (smoke.status !== 0 || smoke.stdout.trim() === '') {
+    throw new Error(`Harness entry smoke test failed (${smoke.status ?? 'signal'}): ${smoke.stderr.trim()}`)
+  }
   console.log(`harness payload: ${dest} (${version}, ${target.id})`)
   console.log(`harness entry:   ${relative}`)
   return { dest, entry: relative }
