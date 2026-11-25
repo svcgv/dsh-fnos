@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdtemp, mkdir, writeFile } from 'node:fs/promises'
+import { mkdtemp, mkdir, readFile, writeFile } from 'node:fs/promises'
 import { createServer, type Server } from 'node:http'
 import { connect } from 'node:net'
 import { tmpdir } from 'node:os'
@@ -9,15 +9,15 @@ import { fileURLToPath } from 'node:url'
 import type { AppConfig } from '../src/config.ts'
 import { HarnessManager } from '../src/harness.ts'
 import { createLogger } from '../src/logger.ts'
-import { ProjectStore } from '../src/projects.ts'
 import { createHandler, createUpgradeHandler } from '../src/server.ts'
+import { WorkspaceStore } from '../src/workspaces.ts'
 
 const fixture = fileURLToPath(new URL('./fixtures/mock-harness.mjs', import.meta.url))
 
 interface Harness {
   readonly base: string
+  readonly home: string
   readonly close: () => Promise<void>
-  readonly config: AppConfig
 }
 
 async function startHarness(): Promise<Harness> {
@@ -42,11 +42,10 @@ async function startHarness(): Promise<Harness> {
     devUid: undefined,
     idleStopMs: 60_000,
     startTimeoutMs: 20_000,
-    maxBodyBytes: 64 * 1024,
   }
 
   const logger = createLogger({ test: 'server' })
-  const store = new ProjectStore({ homeRoot: pkgHome, varRoot: pkgVar, maxProjectsPerUser: 5 })
+  const store = new WorkspaceStore({ homeRoot: pkgHome })
   const manager = new HarnessManager(config, store, logger)
   const deps = { config, store, harness: manager, logger }
 
@@ -58,7 +57,7 @@ async function startHarness(): Promise<Harness> {
 
   return {
     base: `http://127.0.0.1:${address.port}`,
-    config,
+    home: pkgHome,
     close: async () => {
       await manager.stopAll()
       server.closeAllConnections()
@@ -71,123 +70,86 @@ function headers(uid: string, extra: Record<string, string> = {}): Record<string
   return { 'x-trim-userid': uid, 'x-trim-username': `user-${uid}`, ...extra }
 }
 
-test('browser sessions are isolated per project and per NAS user', { timeout: 60_000 }, async () => {
+test('root opens one isolated workspace per NAS user', { timeout: 60_000 }, async () => {
   process.env.TRIM_API_TOKEN = 'gateway-secret'
   const harness = await startHarness()
 
   try {
-    const created = await fetch(`${harness.base}/app/dsh-fnos/api/projects`, {
-      method: 'POST',
-      headers: headers('1000', { 'content-type': 'application/json' }),
-      body: JSON.stringify({ name: '博客重构' }),
+    const root = await fetch(`${harness.base}/app/dsh-fnos/`, {
+      headers: headers('1000'),
+      redirect: 'manual',
     })
-    assert.equal(created.status, 201)
-    const payload = await created.json() as { project: { id: string; name: string } }
-    assert.equal(payload.project.name, '博客重构')
+    assert.equal(root.status, 302)
+    assert.equal(root.headers.get('location'), '/app/dsh-fnos/workspace/')
 
-    const list = await fetch(`${harness.base}/app/dsh-fnos/api/projects`, { headers: headers('1000') })
-    const listed = await list.json() as { projects: Array<{ id: string }>; user: { name: string } }
-    assert.equal(listed.projects.length, 1)
-    assert.equal(listed.user.name, 'user-1000')
-
-    const otherUser = await fetch(`${harness.base}/app/dsh-fnos/api/projects`, { headers: headers('2000') })
-    const otherList = await otherUser.json() as { projects: unknown[] }
-    assert.equal(otherList.projects.length, 0)
-
-    const openPath = `/app/dsh-fnos/p/${payload.project.id}/`
-    const page = await fetch(`${harness.base}${openPath}`, { headers: headers('1000') })
+    const page = await fetch(`${harness.base}/app/dsh-fnos/workspace/`, { headers: headers('1000') })
     assert.equal(page.status, 200)
     assert.match(await page.text(), /MOCK_HARNESS/u)
     assert.equal(page.headers.get('set-cookie'), null)
 
-    const denied = await fetch(`${harness.base}${openPath}`, { headers: headers('2000') })
-    assert.equal(denied.status, 404)
+    const echo = await fetch(`${harness.base}/app/dsh-fnos/workspace/api/echo`, { headers: headers('1000') })
+    const payload = await echo.json() as { dshHome: string; shared: string; leakedTrimToken: string | null }
+    assert.equal(payload.dshHome, join(harness.home, 'users', '1000', 'harness', 'dsh-home'))
+    assert.equal(payload.shared, 'shared-yes')
+    assert.equal(payload.leakedTrimToken, null)
 
-    const echo = await fetch(`${harness.base}${openPath}api/echo`, {
-      headers: headers('1000', { cookie: 'browser-cookie=should-not-forward' }),
+    const marker = JSON.parse(await readFile(join(harness.home, 'users', '1000', 'harness', 'instance.json'), 'utf8')) as { ownerUid: string }
+    assert.equal(marker.ownerUid, '1000')
+
+    const otherRoot = await fetch(`${harness.base}/app/dsh-fnos/`, {
+      headers: headers('2000'),
+      redirect: 'manual',
     })
-    const echoed = await echo.json() as Record<string, unknown>
-    assert.equal(echoed.shared, 'shared-yes')
-    assert.equal(echoed.leakedTrimToken, null)
-    assert.equal(echoed.cookie, 'dsh_session=ok')
-    assert.match(String(echoed.host), /^127\.0\.0\.1:\d+$/u)
-    assert.equal(echoed.url, '/api/echo')
-
-    const redirect = await fetch(`${harness.base}${openPath}redirect`, { headers: headers('1000'), redirect: 'manual' })
-    assert.equal(redirect.status, 302)
-    assert.equal(redirect.headers.get('location'), openPath + 'api/echo')
-
-    const removed = await fetch(`${harness.base}/app/dsh-fnos/api/projects/${payload.project.id}`, {
-      method: 'DELETE',
-      headers: headers('1000', { 'content-type': 'application/json' }),
-    })
-    assert.equal(removed.status, 200)
-
-    const after = await fetch(`${harness.base}/app/dsh-fnos/api/projects`, { headers: headers('1000') })
-    const afterList = await after.json() as { projects: unknown[] }
-    assert.equal(afterList.projects.length, 0)
-  } finally {
-    delete process.env.TRIM_API_TOKEN
-    await harness.close()
-  }
-})
-
-test('cross-user ids never leak project existence', { timeout: 30_000 }, async () => {
-  const harness = await startHarness()
-  try {
-    const created = await fetch(`${harness.base}/app/dsh-fnos/api/projects`, {
-      method: 'POST',
-      headers: headers('1000', { 'content-type': 'application/json' }),
-      body: JSON.stringify({ name: 'private' }),
-    })
-    const { project } = await created.json() as { project: { id: string } }
-
-    for (const uid of ['2000', '1001']) {
-      const page = await fetch(`${harness.base}/app/dsh-fnos/p/${project.id}/`, { headers: headers(uid) })
-      assert.equal(page.status, 404)
-      const del = await fetch(`${harness.base}/app/dsh-fnos/api/projects/${project.id}`, {
-        method: 'DELETE',
-        headers: headers(uid, { 'content-type': 'application/json' }),
-      })
-      assert.equal(del.status, 404)
-    }
+    assert.equal(otherRoot.status, 302)
+    const otherEcho = await fetch(`${harness.base}/app/dsh-fnos/workspace/api/echo`, { headers: headers('2000') })
+    const otherPayload = await otherEcho.json() as { dshHome: string }
+    assert.equal(otherPayload.dshHome, join(harness.home, 'users', '2000', 'harness', 'dsh-home'))
+    assert.notEqual(otherPayload.dshHome, payload.dshHome)
   } finally {
     await harness.close()
   }
 })
 
-test('requests without a gateway identity are rejected', { timeout: 15_000 }, async () => {
+test('legacy project URLs redirect and project APIs are removed', async () => {
   const harness = await startHarness()
   try {
-    const page = await fetch(`${harness.base}/app/dsh-fnos/`)
-    assert.equal(page.status, 401)
-    const api = await fetch(`${harness.base}/app/dsh-fnos/api/projects`)
+    await fetch(`${harness.base}/app/dsh-fnos/`, { headers: headers('1000'), redirect: 'manual' })
+
+    const legacy = await fetch(`${harness.base}/app/dsh-fnos/p/pdeadbeef/timeline?x=1`, {
+      headers: headers('1000'),
+      redirect: 'manual',
+    })
+    assert.equal(legacy.status, 308)
+    assert.equal(legacy.headers.get('location'), '/app/dsh-fnos/workspace/timeline?x=1')
+
+    const projectApi = await fetch(`${harness.base}/app/dsh-fnos/api/projects`, { headers: headers('1000') })
+    assert.equal(projectApi.status, 404)
+  } finally {
+    await harness.close()
+  }
+})
+
+test('requests without a gateway identity are rejected', { timeout: 10_000 }, async () => {
+  const harness = await startHarness()
+  try {
+    const api = await fetch(`${harness.base}/app/dsh-fnos/`)
     assert.equal(api.status, 401)
-    const health = await fetch(`${harness.base}/healthz`)
-    assert.equal(health.status, 200)
   } finally {
     await harness.close()
   }
 })
 
-test('WebSocket upgrades are authenticated and proxied', { timeout: 30_000 }, async () => {
+test('WebSocket upgrades use the single workspace route', { timeout: 30_000 }, async () => {
   const harness = await startHarness()
   try {
-    const created = await fetch(`${harness.base}/app/dsh-fnos/api/projects`, {
-      method: 'POST',
-      headers: headers('1000', { 'content-type': 'application/json' }),
-      body: JSON.stringify({ name: 'ws' }),
-    })
-    const { project } = await created.json() as { project: { id: string } }
-    // Warm the instance so the upgrade does not race the startup token.
-    await fetch(`${harness.base}/app/dsh-fnos/p/${project.id}/`, { headers: headers('1000') })
+    await fetch(`${harness.base}/app/dsh-fnos/`, { headers: headers('1000') })
 
     const url = new URL(harness.base)
     const status = await new Promise<string>((resolve, reject) => {
       const socket = connect(Number(url.port), url.hostname)
       socket.on('connect', () => {
         socket.write([
-          `GET /app/dsh-fnos/p/${project.id}/ws HTTP/1.1`,
+          'GET /app/dsh-fnos/workspace/ws HTTP/1.1',
           `Host: ${url.host}`,
           'Upgrade: websocket',
           'Connection: Upgrade',

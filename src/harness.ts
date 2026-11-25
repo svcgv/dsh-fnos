@@ -7,16 +7,16 @@ import type { AppConfig } from './config.ts'
 import type { Logger } from './logger.ts'
 import { ensureDir } from './paths.ts'
 import { getFreePort } from './ports.ts'
-import type { Project, ProjectStore } from './projects.ts'
+import type { Workspace, WorkspacePaths, WorkspaceStore } from './workspaces.ts'
 
 /** Child process with captured stdout/stderr and no stdin. */
 export type HarnessChild = ChildProcessByStdio<null, Readable, Readable>
 
-/** One running Harness instance serving exactly one project. */
+/** One running Harness instance serving exactly one workspace. */
 export interface HarnessInstance {
   readonly key: string
   readonly uid: string
-  readonly projectId: string
+  readonly workspaceName: string
   readonly port: number
   readonly child: HarnessChild
   /** Cookie minted by the Harness startup token and held server-side. */
@@ -30,16 +30,12 @@ export interface HarnessInstance {
 const TOKEN_URL = /(https?:\/\/\S+[?&]token=[A-Za-z0-9._~%-]+)/u
 const LOG_TAIL_LINES = 40
 
-/** Error raised when a project instance cannot become ready. */
+/** Error raised when a Harness instance cannot become ready. */
 export class HarnessStartError extends Error {
   constructor(message: string, readonly detail: string) {
     super(message)
     this.name = 'HarnessStartError'
   }
-}
-
-function instanceKey(uid: string, projectId: string): string {
-  return `${uid}:${projectId}`
 }
 
 /** Read `KEY=VALUE` pairs from the administrator-managed shared environment file. */
@@ -72,7 +68,7 @@ export async function readSharedEnv(file: string): Promise<Record<string, string
   return env
 }
 
-/** Point a project profile at the administrator-managed shared plugin set. */
+/** Point a workspace profile at the administrator-managed shared plugin set. */
 async function linkSharedProfile(
   config: AppConfig,
   dshHome: string,
@@ -114,20 +110,20 @@ async function waitForReady(port: number, cookie: string): Promise<void> {
   await response.arrayBuffer()
 }
 
-/** Per-project Harness process supervisor. */
+/** Per-user Harness process supervisor. */
 export class HarnessManager {
   readonly #instances = new Map<string, HarnessInstance>()
   readonly #starting = new Map<string, Promise<HarnessInstance>>()
 
   constructor(
     private readonly config: AppConfig,
-    private readonly store: ProjectStore,
+    private readonly store: WorkspaceStore,
     private readonly logger: Logger,
   ) {}
 
   /** Return a ready instance, starting one on demand. */
-  async ensure(uid: string, project: Project): Promise<HarnessInstance> {
-    const key = instanceKey(uid, project.id)
+  async ensure(uid: string, workspace: Workspace): Promise<HarnessInstance> {
+    const key = uid
     const running = this.#instances.get(key)
     if (running !== undefined && !running.exited) {
       running.lastUsed = Date.now()
@@ -137,7 +133,7 @@ export class HarnessManager {
     const pending = this.#starting.get(key)
     if (pending !== undefined) return pending
 
-    const start = this.#start(uid, project, key).finally(() => this.#starting.delete(key))
+    const start = this.#start(uid, workspace, key).finally(() => this.#starting.delete(key))
     this.#starting.set(key, start)
     return start
   }
@@ -156,8 +152,8 @@ export class HarnessManager {
     return cookie
   }
 
-  async stop(uid: string, projectId: string): Promise<void> {
-    const key = instanceKey(uid, projectId)
+  async stop(uid: string): Promise<void> {
+    const key = uid
     const instance = this.#instances.get(key)
     if (instance === undefined) return
     this.#instances.delete(key)
@@ -180,7 +176,7 @@ export class HarnessManager {
     }
   }
 
-  #childEnv(paths: ReturnType<ProjectStore['paths']>, sharedEnv: Record<string, string>): NodeJS.ProcessEnv {
+  #childEnv(paths: WorkspacePaths, sharedEnv: Record<string, string>): NodeJS.ProcessEnv {
     const env: NodeJS.ProcessEnv = {}
     for (const [name, value] of Object.entries(process.env)) {
       // The gateway API token must never reach model-driven commands.
@@ -198,9 +194,9 @@ export class HarnessManager {
     }
   }
 
-  async #start(uid: string, project: Project, key: string): Promise<HarnessInstance> {
-    const logger = this.logger.child({ uid, projectId: project.id })
-    const paths = this.store.paths(uid, project.id)
+  async #start(uid: string, workspace: Workspace, key: string): Promise<HarnessInstance> {
+    const logger = this.logger.child({ uid, workspace: workspace.name })
+    const paths = this.store.paths(uid)
     await Promise.all([
       ensureDir(paths.workspace),
       ensureDir(paths.dshHome),
@@ -238,7 +234,7 @@ export class HarnessManager {
     const instance: HarnessInstance = {
       key,
       uid,
-      projectId: project.id,
+      workspaceName: workspace.name,
       port,
       child,
       cookie: undefined,

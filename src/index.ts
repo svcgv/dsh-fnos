@@ -5,19 +5,15 @@ import { loadConfig } from './config.ts'
 import { HarnessManager } from './harness.ts'
 import { createLogger } from './logger.ts'
 import { ensureDir } from './paths.ts'
-import { ProjectStore } from './projects.ts'
 import { createHandler, createUpgradeHandler } from './server.ts'
+import { WorkspaceStore } from './workspaces.ts'
 
 const logger = createLogger({ app: 'dsh-fnos' })
 const config = loadConfig(process.env, process.cwd())
 
 await Promise.all([ensureDir(config.pkgHome), ensureDir(config.pkgVar), ensureDir(config.pkgEtc)])
 
-const store = new ProjectStore({
-  homeRoot: config.pkgHome,
-  varRoot: config.pkgVar,
-  maxProjectsPerUser: 50,
-})
+const store = new WorkspaceStore({ homeRoot: config.pkgHome })
 const harness = new HarnessManager(config, store, logger)
 
 const server = createServer(createHandler({ config, store, harness, logger }))

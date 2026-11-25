@@ -5,8 +5,8 @@ import { join } from 'node:path'
 import { root } from './build.mjs'
 
 /**
- * Boot the supervisor against a real Harness payload and verify the picker and
- * one project page. Run after `scripts/build-harness-payload.mjs`.
+ * Boot the supervisor against a real Harness payload and verify the single
+ * workspace page. Run after `scripts/build-harness-payload.mjs`.
  */
 const entry = process.env.DSH_FNOS_HARNESS_ENTRY ?? join(root, 'packaging', 'fpk', 'app', 'harness', 'entry.js')
 const port = Number(process.env.DSH_FNOS_SMOKE_PORT ?? 3099)
@@ -51,19 +51,11 @@ async function waitForHealth() {
 try {
   await waitForHealth()
 
-  const created = await fetch(`${base}/api/projects`, {
-    method: 'POST',
-    headers: { ...headers, 'content-type': 'application/json' },
-    body: JSON.stringify({ name: 'smoke' }),
-  })
-  const { project } = await created.json()
-  console.log(`smoke: project ${project.id}`)
-
-  const page = await fetch(`${base}/p/${project.id}/`, { headers })
+  const page = await fetch(`${base}/workspace/`, { headers })
   const body = await page.text()
   console.log(`smoke: page ${page.status} ${page.headers.get('content-type')} ${body.length} bytes`)
   if (page.status !== 200 || !body.includes('__DSH_BOOT__')) {
-    throw new Error('project page did not return the Harness shell')
+    throw new Error('workspace page did not return the Harness shell')
   }
   console.log('smoke: ok')
 } catch (error) {

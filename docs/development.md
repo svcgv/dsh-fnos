@@ -51,13 +51,21 @@ npm run release -- --arch arm64  # ARM64 构建机
 
 GitHub Actions 的 `.github/workflows/build-fpk.yml` 使用原生 amd64/arm64 runner 并行构建，并由 `verify-both-architectures` 汇总任务再次检查两份产物。应用启动时将自身 `runtime/lib` 注入 `LD_LIBRARY_PATH`，这是为了兼容当前 `nodejs_v26` 插件缺失 `libatomic.so.1` 的 fnOS 环境。
 
+## 单工作区与迁移约束
+
+- 产品模型是“每个飞牛 uid 一个 Harness”，固定路径为 `${TRIM_PKGHOME}/users/<uid>/harness/`；不得再次增加项目选择页或项目 CRUD API。
+- 入口 `/app/dsh-fnos/` 自动解析工作区并重定向到 `/workspace/`；旧 `/p/<id>/` 仅做兼容重定向。
+- 0.1.x 迁移选择 `createdAt` 最新的项目，原子移动到 `harness/`；其他旧项目目录不删除。
+- 迁移必须先写 `.workspace-migration.json`，移动后重写 DSH_HOME 内旧绝对路径，最后写 `instance.json` 并删除 journal；迁移失败不得创建空工作区。
+- 测试必须覆盖无旧项目、多个旧项目、移动后续跑、并发去重、绝对路径更新和跨 uid 隔离。
+
 ## 命名与格式
 
 | 对象 | 约定 | 示例 |
 | --- | --- | --- |
 | 文件 | kebab-case | `build-harness-payload.mjs` |
 | 变量/函数 | camelCase | `readIdentity` |
-| 类型/接口 | PascalCase | `ProjectStore` |
+| 类型/接口 | PascalCase | `WorkspaceStore` |
 | 常量 | UPPER_SNAKE | `MAX_NAME_LENGTH` |
 | 布尔 | is/has/can 前缀 | `isAdmin` |
 
@@ -70,17 +78,16 @@ GitHub Actions 的 `.github/workflows/build-fpk.yml` 使用原生 amd64/arm64 ru
 以下位置必须校验，不能依赖类型系统：
 
 1. 网关 Header（`x-trim-userid` 必须是 `^[1-9][0-9]{0,9}$`）。
-2. 请求 JSON body（大小上限 + 结构检查）。
-3. 项目名称（长度、控制字符）。
-4. 任何进入文件系统的 id（`safeSegment` + `resolveInside`）。
-5. 上游响应（状态码、Cookie 是否存在）。
+2. 任何进入文件系统的 id（`safeSegment` + `resolveInside`）。
+3. 旧迁移 journal 和 `instance.json` 的版本、uid 与结构。
+4. 上游响应（状态码、Cookie 是否存在）。
 
 内部模块之间不做重复校验。
 
 ## 错误处理
 
 - 面向用户：中文、可操作、不暴露宿主路径。
-- 面向日志：JSON 单行，字段化（`uid`、`projectId`、`event`）。
+- 面向日志：JSON 单行，字段化（`uid`、`workspace`、`event`）。
 - 启动失败必须显式失败（503 / 非零退出 / `TRIM_TEMP_LOGFILE`），**不允许降级为无鉴权或共享实例**。
 - `catch` 不能吞掉未知错误；只处理明确的 `ENOENT` 等预期分支。
 
@@ -92,7 +99,7 @@ GitHub Actions 的 `.github/workflows/build-fpk.yml` 使用原生 amd64/arm64 ru
 2. 不属于当前用户的资源一律返回 404。
 3. Harness token、Cookie、`TRIM_API_TOKEN`、模型密钥不进入浏览器、不写日志。
 4. 子进程环境过滤 `TRIM_*`。
-5. 只代理 `/p/<id>/` 下的路径，不提供任意路径转发。
+5. 只代理 `/workspace/` 下的路径；旧 `/p/<id>/` 只允许站内重定向。
 6. 不新增分享、邀请、跨用户读取入口。
 
 ## 测试
@@ -100,6 +107,7 @@ GitHub Actions 的 `.github/workflows/build-fpk.yml` 使用原生 amd64/arm64 ru
 - `node:test`；业务测试使用 `*.test.ts`，构建/发布脚本测试使用 `*.test.mjs`，统一由 `scripts/test.mjs` 运行。
 - 覆盖重点：身份解析、路径穿越、跨用户访问、Cookie 注入、Location 改写、WebSocket 升级。
 - `test/fixtures/mock-harness.mjs` 模拟 `dsh web` 的 token 交换与 401 行为；新增代理行为时优先扩展它，而不是依赖真实上游。
+- `test/workspaces.test.ts` 覆盖单工作区创建、旧项目迁移、路径重写、并发去重和跨 uid 隔离。
 - `test/release-config.test.mjs` 校验 Node 26 基线、`nodejs_v26` 依赖、libatomic 校验和、双架构声明、ELF 映射和同架构构建约束。
 - 提交前：`node scripts/test.mjs`。
 
@@ -121,5 +129,5 @@ GitHub Actions 的 `.github/workflows/build-fpk.yml` 使用原生 amd64/arm64 ru
 3. `arm64` 构建机运行 `npm run release -- --arch arm64`，严格验证通过。
 4. 确认 `dist/` 同时存在两个架构的 FPK，文件名、版本和 SHA-256 正确。
 5. 正式发布包使用管理员证书签名；unsigned 包只允许内部验证。
-6. 在两类真机验证：安装 `nodejs_v26` 依赖、安装应用、桌面入口、App 入口、创建两个项目、跨项目不串数据、重启后会话仍在。
-7. 升级验证：旧版本数据保留、`shared.env` 仍生效、失败可回滚到旧 FPK + 旧快照。
+6. 在两类真机验证：安装 `nodejs_v26` 依赖、安装应用、桌面入口、App 入口、两个用户工作区互不串数据、重启后会话仍在。
+7. 升级验证：最新旧项目自动迁移、旧项目目录保留、模型/插件/会话可用、`shared.env` 仍生效、失败可回滚到旧 FPK + 旧快照。

@@ -33,14 +33,12 @@ export interface AppConfig {
   /** Idle project instances are stopped after this delay. */
   readonly idleStopMs: number
   readonly startTimeoutMs: number
-  readonly maxBodyBytes: number
 }
 
 export type Env = Record<string, string | undefined>
 
 const DEFAULT_IDLE_STOP_MS = 30 * 60 * 1000
 const DEFAULT_START_TIMEOUT_MS = 120 * 1000
-const DEFAULT_MAX_BODY_BYTES = 2 * 1024 * 1024
 
 /** Read a positive integer override, rejecting malformed values loudly. */
 function readPositiveInt(env: Env, name: string, fallback: number): number {
@@ -97,6 +95,5 @@ export function loadConfig(env: Env, cwd: string): AppConfig {
     devUid: devUid === undefined || devUid === '' ? undefined : devUid,
     idleStopMs: readPositiveInt(env, 'DSH_FNOS_IDLE_STOP_MS', DEFAULT_IDLE_STOP_MS),
     startTimeoutMs: readPositiveInt(env, 'DSH_FNOS_START_TIMEOUT_MS', DEFAULT_START_TIMEOUT_MS),
-    maxBodyBytes: readPositiveInt(env, 'DSH_FNOS_MAX_BODY_BYTES', DEFAULT_MAX_BODY_BYTES),
   }
 }

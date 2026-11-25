@@ -85,7 +85,6 @@ export async function build() {
   await removeTree(join(root, 'dist', 'src'))
   await removeTree(join(root, 'dist', 'test'))
   run(process.execPath, [tsc, '-p', 'tsconfig.json'])
-  await copyTree(join(root, 'src', 'ui'), join(root, 'dist', 'src', 'ui'))
   await copyTree(join(root, 'test', 'fixtures'), join(root, 'dist', 'test', 'fixtures'))
 }
 

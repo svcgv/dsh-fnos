@@ -7,6 +7,14 @@
 - `package.json` 的 `engines.node` 不得低于 `>=26 <27`，TypeScript 类型包跟随 Node 26。
 - Harness 上游声明的 Node 最低版本低于本项目基线时，仍以 Node 26 为准。
 
+## 工作区模型
+
+- 每个飞牛 `uid` 只拥有一个 Harness 工作区，固定目录为 `${TRIM_PKGHOME}/users/<uid>/harness/`。
+- 应用入口不得再展示项目选择页；`/` 自动进入 `/workspace/`，旧 `/p/<id>/` 只允许兼容重定向。
+- 不得恢复项目创建、列表、删除 API；旧项目只作为 0.2.0 迁移来源或人工恢复数据。
+- 从 0.1.x 首次迁移时选择 `createdAt` 最新的项目并原地移动到 `harness/`，其他项目目录保留不删。
+- 迁移必须支持 journal 续跑、并发去重和 DSH_HOME 内旧绝对路径重写；失败时不得创建空工作区覆盖旧数据。
+
 ## 发布产物
 
 - 每次正式构建必须分别产出两个独立 FPK：`linux-amd64` 与 `linux-arm64`。

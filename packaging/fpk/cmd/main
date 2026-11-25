@@ -86,7 +86,7 @@ start() {
     prepare_runtime
     NODE="$(pick_node)" || fail "nodejs_v26 插件运行时不可用或不是 Node.js 26；诊断：$(node_status "${NODE_APP}")"
     [ -f "${APP}/server/index.js" ] || fail "应用文件不完整：缺少 server/index.js"
-    [ -f "${APP}/harness/entry.js" ] || log_msg "WARN: 缺少 harness/entry.js，打开项目时会启动失败"
+    [ -f "${APP}/harness/entry.js" ] || log_msg "WARN: 缺少 harness/entry.js，打开工作区时会启动失败"
 
     mkdir -p "${VAR}"
     log_msg "starting with ${NODE}"
