@@ -1,0 +1,52 @@
+packaging/fpk/manifest
+  s_bc712ba9106abc::t_781fe80764f115 2,21-22
+scripts/verify-fpk.mjs
+  s_bc712ba9106abc::t_781fe80764f115 45,57-59
+  s_bc712ba9106abc::t_963ef8c816eb04 8-13,44,60-64,79-80,85-87,89,91,102-103
+package.json
+  s_bc712ba9106abc::t_781fe80764f115 3
+scripts/package.mjs
+  s_bc712ba9106abc::t_8de54c7805ba8f 84-85
+  s_bc712ba9106abc::t_781fe80764f115 82,86-87
+  s_bc712ba9106abc::t_d7e898e3c1da90 1,7,24-25,77-79,104
+AGENTS.md
+  s_bc712ba9106abc::t_efd6ca3375a0ef 5-6,13-14,18-19
+README.md
+  s_bc712ba9106abc::t_077df2db9d08e6 6,24,39,49,82,91,107,118-119
+docs/architecture.md
+  s_bc712ba9106abc::t_0b169db5d60305 21,28,30,32-33,35-45
+docs/development.md
+  s_bc712ba9106abc::t_ff05139160b37b 15,17,19-20,24,26-27,45,48,52,103,124
+docs/operations.md
+  s_bc712ba9106abc::t_ea4b5d868d8561 6-9,86-87
+package-lock.json
+  s_bc712ba9106abc::t_afff7112176792 3,9
+packaging/fpk/cmd/main
+  s_bc712ba9106abc::t_de407e84a54672 9-10,29-38,48,50,60-68,86-87
+release.json
+  s_bc712ba9106abc::t_3ad1eb292b414d 3,5-11
+scripts/release-config.mjs
+  s_bc712ba9106abc::t_f9ad01e7f01426 50-67,82,84-87
+scripts/runtime-libraries.mjs
+  s_bc712ba9106abc::t_beb2ad788cc83e 3,11,34-36,39-42,45,47,49-50,52-71,75-76,78,80-82
+src/config.ts
+  s_bc712ba9106abc::t_458ee7f942b551 56-57
+test/release-config.test.mjs
+  s_bc712ba9106abc::t_c9ff16f315f48d 16,19-22
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "db95edbc73477f561aba82b730042b5ce45dc5f7",
+  "prompts": {},
+  "sessions": {
+    "s_bc712ba9106abc": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a20cfc-2d0b-7982-b515-b2eed53c118b",
+        "model": "deepseek-v4.1-flash"
+      },
+      "human_author": "svcgv <hb1230123@hotmail.com>"
+    }
+  }
+}
