@@ -7,7 +7,9 @@ VAR="${TRIM_PKGVAR:?}"
 LOG="${VAR}/dsh-fnos.log"
 PID_FILE="${VAR}/dsh-fnos.pid"
 NODE_APP="${DSH_FNOS_NODE_APP:-/var/apps/nodejs_v26/target/bin/node}"
+NODE_APP_BIN="${NODE_APP%/*}"
 RUNTIME_LIB="${APP}/runtime/lib"
+RUNTIME_BIN="${APP}/runtime/bin"
 NODE=""
 
 log_msg() {
@@ -58,6 +60,7 @@ pick_node() {
 }
 
 prepare_runtime() {
+    export PATH="${RUNTIME_BIN}:${NODE_APP_BIN}:${PATH:-}"
     if [ -d "${RUNTIME_LIB}" ]; then
         case ":${LD_LIBRARY_PATH:-}:" in
             *":${RUNTIME_LIB}:"*) ;;

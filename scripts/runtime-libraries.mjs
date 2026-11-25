@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
 import { createWriteStream, existsSync } from 'node:fs'
-import { mkdir, mkdtemp, readFile, rename, rm, writeFile } from 'node:fs/promises'
+import { chmod, cp, mkdir, mkdtemp, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { Readable } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
@@ -9,6 +9,7 @@ import { root } from './build.mjs'
 import { architectureSpec, detectElfArchitecture } from './release-config.mjs'
 
 const downloadRoot = join(root, '.local', 'cache', 'debian')
+const npmCacheRoot = join(root, '.local', 'cache', 'npm')
 
 function runChecked(command, args, options = {}) {
   const result = spawnSync(command, args, { encoding: 'utf8', ...options })
@@ -80,4 +81,45 @@ export async function stageRuntimeLibraries(destination, options) {
   await mkdir(destination, { recursive: true })
   await writeFile(join(destination, 'libatomic.so.1'), source)
   await writeFile(join(destination, 'VERSION'), `${options.libatomic.version}\n`)
+}
+
+/** Stage the pinned pure-JavaScript pnpm CLI and command shims for Harness plugins. */
+export async function stagePnpmRuntime(runtimeRoot, options) {
+  const filename = `pnpm-${options.pnpm.version}.tgz`
+  const archive = join(npmCacheRoot, filename)
+  await download(`https://registry.npmjs.org/pnpm/-/${filename}`, archive)
+  await verifySha256(archive, options.pnpm.sha256)
+
+  const tempRoot = join(root, '.local', 'tmp')
+  await mkdir(tempRoot, { recursive: true })
+  const work = await mkdtemp(join(tempRoot, 'pnpm-runtime-'))
+  const packageRoot = join(work, 'package')
+  try {
+    runChecked('tar', ['-xzf', archive, '-C', work])
+    if (!existsSync(join(packageRoot, 'bin', 'pnpm.cjs'))) {
+      throw new Error(`pnpm archive is missing bin/pnpm.cjs: ${archive}`)
+    }
+    const destination = join(runtimeRoot, 'pnpm')
+    await rm(destination, { recursive: true, force: true })
+    await cp(packageRoot, destination, { recursive: true, force: true })
+    await writeFile(join(destination, 'VERSION'), `${options.pnpm.version}\n`)
+
+    const binDir = join(runtimeRoot, 'bin')
+    await mkdir(binDir, { recursive: true })
+    for (const [command, entry] of [['pnpm', 'pnpm.cjs'], ['pnpx', 'pnpx.cjs']]) {
+      const wrapper = [
+        '#!/bin/sh',
+        'set -eu',
+        'SELF_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)',
+        'RUNTIME_DIR=$(dirname "$SELF_DIR")',
+        `exec node "$RUNTIME_DIR/pnpm/bin/${entry}" "$@"`,
+        '',
+      ].join('\n')
+      const path = join(binDir, command)
+      await writeFile(path, wrapper, { mode: 0o755 })
+      await chmod(path, 0o755)
+    }
+  } finally {
+    await rm(work, { recursive: true, force: true })
+  }
 }

@@ -75,6 +75,16 @@ sudo /var/apps/dsh-fnos/cmd/main start
 3. 首次打开应用时等待旧项目迁移完成，确认会话、附件、插件和模型配置可读。
 4. 回滚：卸载/降级到旧 FPK，并恢复对应快照。**不要**让旧版本直接读新版数据。
 
+## 卸载
+
+卸载向导默认保留应用数据。勾选“同时删除全部数据和配置”后，会永久删除：
+
+- 所有用户工作区与旧项目残留（`TRIM_PKGHOME`）
+- `shared.env` 等管理员配置（`TRIM_PKGETC`）
+- 日志、PID 和隔离区（`TRIM_PKGVAR`）
+
+删除前脚本只接受本应用对应的 `@apphome/dsh-fnos`、`@appconf/dsh-fnos`、`@appdata/dsh-fnos` 路径，并拒绝符号链接，避免误删其他应用。
+
 ## 故障排查
 
 | 现象 | 检查 |
@@ -86,6 +96,7 @@ sudo /var/apps/dsh-fnos/cmd/main start
 | 工作区迁移失败 | 检查 `users/<uid>/.workspace-migration.json`、旧项目目录和应用日志；不要删除原数据，修复后重试 |
 | 启动即退出 | `cmd/main start` 的 `TRIM_TEMP_LOGFILE` 与日志；确认 `nodejs_v26` 插件存在且 `/var/apps/nodejs_v26/target/bin/node` 可执行 |
 | 缺少 `libatomic.so.1` | FPK 应携带 `runtime/lib/libatomic.so.1`；重新生成并安装当前双架构包 |
+| 插件安装提示 `spawn pnpm ENOENT` | 确认 0.2.1+ FPK 中存在 `runtime/bin/pnpm` 和 `runtime/pnpm/bin/pnpm.cjs`，并重启应用刷新 `PATH` |
 | 页面空白但 200 | Harness 前端产物不完整；重新打包 payload |
 | 同一用户重复启动 | 检查端口占用与 `harness-exit` 记录 |
 | 文件权限异常 | `trimacl` 卷不要用 `ls -l` 判断；用实际读写验证 |

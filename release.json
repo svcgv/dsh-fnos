@@ -2,6 +2,10 @@
   "nodeVersion": "26.13.1",
   "nodeRuntimeDependency": "nodejs_v26",
   "harnessVersion": "0.2.2-rc.5",
+  "pnpm": {
+    "version": "10.34.9",
+    "sha256": "7e8a946108e7baab119e51d27c24d6178b46545422643dbc91e34e2f1ee32e0f"
+  },
   "libatomic": {
     "version": "12.2.0-14+deb12u1",
     "sha256": {

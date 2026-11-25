@@ -36,7 +36,7 @@
 
 | 内容 | 位置 |
 | --- | --- |
-| 程序 | `${TRIM_APPDEST}`（`server/`、`harness/`、`runtime/lib/`） |
+| 程序 | `${TRIM_APPDEST}`（`server/`、`harness/`、`runtime/lib/`、`runtime/bin/`、`runtime/pnpm/`） |
 | 管理员配置 | `${TRIM_PKGETC}/shared.env`，`${TRIM_APPDEST}/shared/profile/<profile>/`（共享插件集） |
 | 用户工作区 | `${TRIM_PKGHOME}/users/<uid>/harness/workspace/` |
 | 用户 Harness 状态 | `${TRIM_PKGHOME}/users/<uid>/harness/dsh-home/`、`agents-home/`、`home/`、`tmp/` |
@@ -80,7 +80,7 @@ npm run release -- --arch amd64
 npm run release -- --arch arm64
 ```
 
-发布脚本会完成 Harness payload、Debian 12 `libatomic` 下载与 SHA-256 校验、FPK 打包、`nodejs_v26` 依赖检查、libatomic ELF 架构检查和 Harness payload 架构检查。产物固定为：
+发布脚本会完成 Harness payload、Debian 12 `libatomic`、纯 JS pnpm 下载与 SHA-256 校验、FPK 打包、`nodejs_v26` 依赖检查、运行时/payload 架构检查。产物固定为：
 
 ```text
 dist/dsh-fnos-<version>-linux-amd64.fpk
@@ -89,7 +89,7 @@ dist/dsh-fnos-<version>-linux-arm64.fpk
 
 GitHub Actions 的 `build-fpk` 工作流会用 `ubuntu-24.04` 与 `ubuntu-24.04-arm` 并行构建，并在汇总任务中再次验证两份产物。未配置 `FNPACK_KEY` / `FNPACK_CERT` 时生成本地验证用 unsigned FPK，不可作为正式商店发布包。
 
-运行时使用 `/var/apps/nodejs_v26/target/bin/node`。FPK 只携带当前 fnOS 环境缺失的 `libatomic.so.1`，启动时通过 `LD_LIBRARY_PATH` 注入，不修改 NAS 系统。没有完整 Harness payload 时可用 `--allow-missing-payload` 生成仅用于调试的包，该包会跳过严格发布校验。
+运行时使用 `/var/apps/nodejs_v26/target/bin/node`。FPK 携带 `runtime/lib/libatomic.so.1` 兼容库和固定版 pnpm；启动时将 `runtime/bin` 加入 `PATH`，供 Harness 插件安装器调用，不修改 NAS 系统。没有完整 Harness payload 时可用 `--allow-missing-payload` 生成仅用于调试的包，该包会跳过严格发布校验。
 
 ## 安装后
 
@@ -115,6 +115,8 @@ GitHub Actions 的 `build-fpk` 工作流会用 `ubuntu-24.04` 与 `ubuntu-24.04-
 
 - 工作区默认位于应用私有目录；需要编辑其他目录时，在飞牛应用设置中授予该应用目录读写权限，再从 Harness 添加工作区。
 - 共享插件通过 profile 软链提供默认集合；用户工作区仍可在 Harness 插件页安装自己的插件。
+- FPK 内置 pnpm `10.34.9`，插件安装不依赖宿主自行安装 pnpm。
+- 卸载时可选择保留数据（默认）或永久清空全部工作区、配置和日志残留。
 - 单实例模型：同一飞牛用户在 PC 与手机共用同一个 Harness 进程；空闲 30 分钟后回收。
 - 未开放 Harness 的分享、配对与 API 令牌登录。
 - Harness payload 取自 npm 发布版，体积约 1 GB；应用依赖飞牛商店 `nodejs_v26` 插件，不内置完整 Node 运行时。

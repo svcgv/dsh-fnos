@@ -44,6 +44,8 @@ install_dep_apps = nodejs_v26
 
 启动脚本从 `/var/apps/nodejs_v26/target/bin/node` 解析运行时。当前 fnOS 的该插件缺少 `libatomic.so.1`，因此应用在 `runtime/lib/` 携带 Debian 12 的兼容库，并通过仅对应用进程生效的 `LD_LIBRARY_PATH` 注入；不安装或修改宿主系统库。
 
+Harness 插件安装器依赖 `pnpm`。FPK 在 `runtime/pnpm/` 携带固定版纯 JS pnpm，并在 `runtime/bin/` 提供 `pnpm`/`pnpx` wrapper；启动脚本把该目录加入 `PATH`，因此插件安装不需要宿主预装 pnpm。
+
 ## 请求生命周期
 
 ```text

@@ -51,6 +51,15 @@ export async function loadReleaseConfig() {
     throw new Error('release.json nodeRuntimeDependency must be nodejs_v26')
   }
   if (
+    parsed.pnpm === null
+    || typeof parsed.pnpm !== 'object'
+    || typeof parsed.pnpm.version !== 'string'
+    || !/^10\.\d+\.\d+$/u.test(parsed.pnpm.version)
+    || !/^[0-9a-f]{64}$/u.test(parsed.pnpm.sha256 ?? '')
+  ) {
+    throw new Error('release.json pnpm metadata is incomplete')
+  }
+  if (
     parsed.libatomic === null
     || typeof parsed.libatomic !== 'object'
     || typeof parsed.libatomic.version !== 'string'
@@ -81,6 +90,7 @@ export async function loadReleaseConfig() {
     nodeVersion: parsed.nodeVersion,
     nodeRuntimeDependency: parsed.nodeRuntimeDependency,
     harnessVersion: parsed.harnessVersion,
+    pnpm: Object.freeze({ version: parsed.pnpm.version, sha256: parsed.pnpm.sha256 }),
     libatomic: Object.freeze({
       version: parsed.libatomic.version,
       sha256: Object.freeze({ ...parsed.libatomic.sha256 }),

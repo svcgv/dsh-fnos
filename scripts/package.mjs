@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { build, copyTree, normalizeModes, removeTree, root, run } from './build.mjs'
 import { validateHarnessPayload } from './build-harness-payload.mjs'
-import { stageRuntimeLibraries } from './runtime-libraries.mjs'
+import { stagePnpmRuntime, stageRuntimeLibraries } from './runtime-libraries.mjs'
 import {
   architectureSpec,
   loadReleaseConfig,
@@ -76,7 +76,8 @@ export async function packageFpk(options) {
 
   const runtimeLibDir = join(stageFpk, 'app', 'runtime', 'lib')
   await stageRuntimeLibraries(runtimeLibDir, { arch: target.id, libatomic: config.libatomic })
-  console.log(`package: staged libatomic ${config.libatomic.version} ${target.id}`)
+  await stagePnpmRuntime(join(stageFpk, 'app', 'runtime'), { pnpm: config.pnpm })
+  console.log(`package: staged libatomic ${config.libatomic.version} ${target.id} and pnpm ${config.pnpm.version}`)
 
   const manifestPath = join(stageFpk, 'manifest')
   const packageJson = JSON.parse(await readFile(join(root, 'package.json'), 'utf8'))
@@ -91,6 +92,10 @@ export async function packageFpk(options) {
   await normalizeModes(stageFpk, false)
   for (const script of await readdir(join(stageFpk, 'cmd'))) {
     await chmod(join(stageFpk, 'cmd', script), 0o755)
+  }
+  for (const command of ['pnpm', 'pnpx']) {
+    const path = join(stageFpk, 'app', 'runtime', 'bin', command)
+    if (existsSync(path)) await chmod(path, 0o755)
   }
   await chmod(manifestPath, 0o644)
   run(process.env.FNPACK ?? 'fnpack', fnpackArgs(stageRoot), { cwd: stageRoot })

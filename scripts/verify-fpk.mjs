@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
 import { existsSync } from 'node:fs'
-import { mkdir, mkdtemp, readFile, rm } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, stat } from 'node:fs/promises'
 import { join } from 'node:path'
 import { spawnSync } from 'node:child_process'
 import { pathToFileURL } from 'node:url'
@@ -78,6 +78,10 @@ export async function verifyFpk(file, arch) {
       `harness/node_modules/sherpa-onnx-linux-${target.nodeArch}`,
       'runtime/lib/libatomic.so.1',
       'runtime/lib/VERSION',
+      'runtime/bin/pnpm',
+      'runtime/bin/pnpx',
+      'runtime/pnpm/bin/pnpm.cjs',
+      'runtime/pnpm/VERSION',
     ]) {
       if (!existsSync(join(appDir, required))) throw new Error(`FPK is missing app/${required}`)
     }
@@ -90,6 +94,14 @@ export async function verifyFpk(file, arch) {
     if (elf.architecture !== target.id) {
       throw new Error(`libatomic ELF is ${elf.architecture}, expected ${target.id}`)
     }
+    const pnpmVersion = (await readFile(join(appDir, 'runtime', 'pnpm', 'VERSION'), 'utf8')).trim()
+    if (pnpmVersion !== config.pnpm.version) {
+      throw new Error(`pnpm version is ${JSON.stringify(pnpmVersion)}, expected ${config.pnpm.version}`)
+    }
+    for (const command of ['pnpm', 'pnpx']) {
+      const mode = (await stat(join(appDir, 'runtime', 'bin', command))).mode
+      if ((mode & 0o111) === 0) throw new Error(`runtime/bin/${command} is not executable`)
+    }
     const marker = JSON.parse(await readFile(join(appDir, 'harness', '.dsh-fnos-arch.json'), 'utf8'))
     if (marker.architecture !== target.id || marker.fnosPlatform !== target.fnosPlatform) {
       throw new Error(`Harness payload marker is ${JSON.stringify(marker)}, expected ${target.id}`)
@@ -100,6 +112,7 @@ export async function verifyFpk(file, arch) {
       architecture: target.id,
       fnosPlatform: target.fnosPlatform,
       nodeRuntimeDependency: config.nodeRuntimeDependency,
+      pnpmVersion,
       libatomicVersion,
       harnessVersion: marker.harnessVersion,
       sha256: await artifactSha256(file),

@@ -1,5 +1,5 @@
 appname               = dsh-fnos
-version               = 0.2.0
+version               = 0.2.2
 display_name          = DeepSeek Harness
 desc                  = 原生运行的 DeepSeek Harness，每个飞牛用户一个独立工作区，通过飞牛统一网关登录。
 source                = thirdparty
@@ -18,5 +18,5 @@ ctl_stop              = true
 checkport             = false
 disable_authorization_path = false
 
-changelog             = 0.2.0：改为单工作区直达 Harness，自动迁移最新旧项目并保留模型、插件和会话。
+changelog             = 0.2.2：内置 pnpm 修复插件安装，并支持卸载时可选清空全部数据残留。
 install_dep_apps      = nodejs_v26

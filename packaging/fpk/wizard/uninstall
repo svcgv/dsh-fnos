@@ -1,0 +1,23 @@
+[
+  {
+    "stepTitle": "卸载 DeepSeek Harness",
+    "items": [
+      {
+        "type": "select",
+        "field": "wizard_uninstall_mode",
+        "label": "数据处理",
+        "initValue": "preserve",
+        "options": [
+          {
+            "label": "保留工作区、配置和插件数据",
+            "value": "preserve"
+          },
+          {
+            "label": "删除全部数据和配置（不可恢复）",
+            "value": "delete"
+          }
+        ]
+      }
+    ]
+  }
+]

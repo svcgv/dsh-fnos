@@ -6,6 +6,8 @@
 - 运行时不随 FPK 打包；`manifest` 必须声明 `install_dep_apps=nodejs_v26`，使用飞牛商店的 Node.js 26 插件。
 - `package.json` 的 `engines.node` 不得低于 `>=26 <27`，TypeScript 类型包跟随 Node 26。
 - Harness 上游声明的 Node 最低版本低于本项目基线时，仍以 Node 26 为准。
+- FPK 必须内置 `release.json` 固定的纯 JS pnpm，并在启动 Harness 时把 `runtime/bin` 加入 `PATH`；插件安装不得依赖宿主 pnpm。
+- 卸载向导必须提供“同时删除全部数据和配置”选项，默认保留；删除前校验目标必须是本应用的 `@apphome`、`@appconf`、`@appdata` 目录。
 
 ## 工作区模型
 

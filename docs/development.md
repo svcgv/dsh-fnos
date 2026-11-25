@@ -17,7 +17,8 @@
 3. 含 `libatomic`、`node-pty`、Koffi、Sherpa 等架构相关二进制的包，`manifest` 只能写 `platform=x86` 或 `platform=arm`。**禁止使用 `platform=all`** 掩盖单架构内容。
 4. Harness payload 必须在目标架构的 Linux 构建机上安装；不要把 macOS 或另一 CPU 架构的 payload 直接塞进 FPK。
 5. `manifest` 必须声明 `install_dep_apps=nodejs_v26`；启动脚本优先使用 `/var/apps/nodejs_v26/target/bin/node`。
-6. 固定版本事实集中在 `release.json`：开发 Node、Node 插件名、Harness、libatomic 与需要发布的架构列表。升级时同步更新 `package.json`、锁文件和本文档。
+6. 固定版本事实集中在 `release.json`：开发 Node、Node 插件名、Harness、pnpm、libatomic 与需要发布的架构列表。升级时同步更新 `package.json`、锁文件和本文档。
+7. FPK 必须携带纯 JS pnpm，并把 `runtime/bin` 放入 Harness 的 `PATH`；不得要求用户在 NAS 上预装 pnpm。
 
 ### 架构映射
 
@@ -42,10 +43,10 @@ npm run release -- --arch arm64  # ARM64 构建机
 发布链依次执行：
 
 1. 安装固定版本的 `@deepseek-ai/dsh`，校验 Linux/目标架构原生包存在。
-2. 下载 Debian 12 `libatomic` 包，校验固定 SHA-256 和 ELF 架构。
+2. 下载 Debian 12 `libatomic` 与固定版 pnpm，校验固定 SHA-256；pnpm 使用纯 JS 包。
 3. 在隔离 staging 目录生成对应 `manifest`，不修改源码目录中的模板。
 4. 调用 `fnpack` 生成 `<version>-linux-<arch>.fpk`。
-5. 解包 FPK 复核 `nodejs_v26` 依赖、server、Harness entry、libatomic 版本/ELF 和 payload 架构。
+5. 解包 FPK 复核 `nodejs_v26` 依赖、server、Harness entry、libatomic 版本/ELF、pnpm wrapper/版本和 payload 架构。
 
 产物名固定为 `dist/dsh-fnos-<version>-linux-<amd64|arm64>.fpk`。无 `FNPACK_KEY` / `FNPACK_CERT` 时只能生成 unsigned 调试包，不能作为正式发布物。
 
