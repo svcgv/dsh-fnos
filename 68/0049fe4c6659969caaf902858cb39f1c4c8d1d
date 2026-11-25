@@ -1,0 +1,59 @@
+packaging/fpk/cmd/uninstall_init
+  s_bc712ba9106abc::t_1bf11110271d25 2,4-20,22-24,26,30-39
+  s_bc712ba9106abc::t_794fbd53ccc529 21
+  s_bc712ba9106abc::t_f75fdf3f205415 27-29
+packaging/fpk/manifest
+  s_bc712ba9106abc::t_b0ecd0020d4865 2,21
+test/uninstall.test.mjs
+  s_bc712ba9106abc::t_f75fdf3f205415 56
+  s_bc712ba9106abc::t_f3d60fffa4b99e 1-55,57-61
+packaging/fpk/wizard/uninstall
+  s_bc712ba9106abc::t_1bf11110271d25 1-5,20-23
+  s_bc712ba9106abc::t_f75fdf3f205415 6-19
+package.json
+  s_bc712ba9106abc::t_b0ecd0020d4865 3
+scripts/package.mjs
+  s_bc712ba9106abc::t_090d30ce59c072 7,79-80,96-98
+  s_bc712ba9106abc::t_fa987a9d309f24 99
+docs/operations.md
+  s_bc712ba9106abc::t_b0ecd0020d4865 78-87
+  s_bc712ba9106abc::t_070158f31ddb1f 99
+packaging/fpk/cmd/main
+  s_bc712ba9106abc::t_cb7e082f802087 10,12,63
+AGENTS.md
+  s_bc712ba9106abc::t_dbc4d1506f6f7d 9-10
+README.md
+  s_bc712ba9106abc::t_5ab2ef222acf4b 39,83,92,118-119
+docs/architecture.md
+  s_bc712ba9106abc::t_be470377c6d4ec 47-48
+docs/development.md
+  s_bc712ba9106abc::t_44d4f52d97089b 20-21,46,49
+package-lock.json
+  s_bc712ba9106abc::t_4bc977da968c46 3,9
+release.json
+  s_bc712ba9106abc::t_8ca07ad29fcb35 5-8
+scripts/release-config.mjs
+  s_bc712ba9106abc::t_023d54dc0b29a4 53-61,93
+scripts/runtime-libraries.mjs
+  s_bc712ba9106abc::t_17db227381dc8c 3,12,85-125
+scripts/verify-fpk.mjs
+  s_bc712ba9106abc::t_dae1ce5787c40d 3,81-84,97-104,115
+test/release-config.test.mjs
+  s_bc712ba9106abc::t_e56bb325fabf94 20-21
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "680049fe4c6659969caaf902858cb39f1c4c8d1d",
+  "prompts": {},
+  "sessions": {
+    "s_bc712ba9106abc": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a20cfc-2d0b-7982-b515-b2eed53c118b",
+        "model": "deepseek-v4.1-flash"
+      },
+      "human_author": "svcgv <hb1230123@hotmail.com>"
+    }
+  }
+}
