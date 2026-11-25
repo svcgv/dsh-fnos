@@ -3,9 +3,10 @@
 ## 安装
 
 1. 根据设备架构选择 `dist/dsh-fnos-<version>-linux-amd64.fpk` 或 `dist/dsh-fnos-<version>-linux-arm64.fpk`。
-2. 通过飞牛应用中心安装；`manifest` 会拒绝与设备架构不匹配的包。
-3. 确认 `cmd/main status` 返回运行中（应用中心显示“运行”）。
-4. 桌面或 App 打开 **DeepSeek Harness**。
+2. 确认飞牛商店已安装 `nodejs_v26` 插件；FPK 会声明该依赖。
+3. 通过飞牛应用中心安装；`manifest` 会拒绝与设备架构不匹配的包。
+4. 确认 `cmd/main status` 返回运行中（应用中心显示“运行”）。
+5. 桌面或 App 打开 **DeepSeek Harness**。
 
 首次安装会创建：
 
@@ -82,7 +83,8 @@ sudo /var/apps/dsh-fnos/cmd/main start
 | 打开应用 502 | 项目实例启动失败；看日志中 `harness-start-failed` 的 `detail` |
 | 打开应用 503 | `app/harness/entry.js` 缺失，或 Node 运行时不可用 |
 | 安装被拒绝 | FPK 架构与设备不一致；x86 设备装 `amd64`，ARM 设备装 `arm64` |
-| 启动即退出 | `cmd/main start` 的 `TRIM_TEMP_LOGFILE` 与日志；确认 `runtime/node/bin/node` 或系统 Node 为 26.x |
+| 启动即退出 | `cmd/main start` 的 `TRIM_TEMP_LOGFILE` 与日志；确认 `nodejs_v26` 插件存在且 `/var/apps/nodejs_v26/target/bin/node` 可执行 |
+| 缺少 `libatomic.so.1` | FPK 应携带 `runtime/lib/libatomic.so.1`；重新生成并安装当前双架构包 |
 | 页面空白但 200 | Harness 前端产物不完整；重新打包 payload |
 | 同一项目重复启动 | 检查端口占用与 `harness-exit` 记录 |
 | 文件权限异常 | `trimacl` 卷不要用 `ls -l` 判断；用实际读写验证 |

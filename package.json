@@ -1,6 +1,6 @@
 {
   "name": "dsh-fnos",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "description": "DeepSeek Harness for fnOS: native gateway app with per-project isolation",
   "license": "MIT",

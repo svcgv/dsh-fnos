@@ -12,18 +12,19 @@
 
 ### 不变量
 
-1. 开发、CI 与内置运行时统一为 Node.js 26，不得回退到 Node 22/24。
+1. 开发与 CI 使用 Node.js 26；生产运行时依赖飞牛商店 `nodejs_v26` 插件，不在 FPK 中复制 Node 二进制。
 2. 每次正式发布必须分别产出 `linux-amd64` 与 `linux-arm64` 两个 FPK，缺一不可。
-3. 含原生 Node 运行时、`node-pty`、Koffi、Sherpa 等架构相关二进制的包，`manifest` 只能写 `platform=x86` 或 `platform=arm`。**禁止使用 `platform=all`** 掩盖单架构内容。
+3. 含 `libatomic`、`node-pty`、Koffi、Sherpa 等架构相关二进制的包，`manifest` 只能写 `platform=x86` 或 `platform=arm`。**禁止使用 `platform=all`** 掩盖单架构内容。
 4. Harness payload 必须在目标架构的 Linux 构建机上安装；不要把 macOS 或另一 CPU 架构的 payload 直接塞进 FPK。
-5. 固定版本事实集中在 `release.json`：Node 运行时、Harness 版本、需要发布的架构列表。升级时同步更新 `package.json`、锁文件和本文档。
+5. `manifest` 必须声明 `install_dep_apps=nodejs_v26`；启动脚本优先使用 `/var/apps/nodejs_v26/target/bin/node`。
+6. 固定版本事实集中在 `release.json`：开发 Node、Node 插件名、Harness、libatomic 与需要发布的架构列表。升级时同步更新 `package.json`、锁文件和本文档。
 
 ### 架构映射
 
-| 发布标识 | fnOS `platform` | Node 发行版 | ELF `e_machine` | 推荐 runner |
+| 发布标识 | fnOS `platform` | Node 运行时 | libatomic ELF | 推荐 runner |
 | --- | --- | --- | --- | --- |
-| `amd64` | `x86` | `linux-x64` | `62` | `ubuntu-24.04` |
-| `arm64` | `arm` | `linux-arm64` | `183` | `ubuntu-24.04-arm` |
+| `amd64` | `x86` | `nodejs_v26` | `62` | `ubuntu-24.04` |
+| `arm64` | `arm` | `nodejs_v26` | `183` | `ubuntu-24.04-arm` |
 
 映射由 `scripts/release-config.mjs` 统一实现。新增架构时必须同时补映射、验证逻辑和 CI，不得只改产物文件名。
 
@@ -41,14 +42,14 @@ npm run release -- --arch arm64  # ARM64 构建机
 发布链依次执行：
 
 1. 安装固定版本的 `@deepseek-ai/dsh`，校验 Linux/目标架构原生包存在。
-2. 下载官方 Node 26 Linux 发行版，校验 `SHASUMS256.txt` 和 ELF 架构。
+2. 下载 Debian 12 `libatomic` 包，校验固定 SHA-256 和 ELF 架构。
 3. 在隔离 staging 目录生成对应 `manifest`，不修改源码目录中的模板。
 4. 调用 `fnpack` 生成 `<version>-linux-<arch>.fpk`。
-5. 解包 FPK 复核 manifest、server、Harness entry、运行时版本、Node ELF 和 payload 架构。
+5. 解包 FPK 复核 `nodejs_v26` 依赖、server、Harness entry、libatomic 版本/ELF 和 payload 架构。
 
 产物名固定为 `dist/dsh-fnos-<version>-linux-<amd64|arm64>.fpk`。无 `FNPACK_KEY` / `FNPACK_CERT` 时只能生成 unsigned 调试包，不能作为正式发布物。
 
-GitHub Actions 的 `.github/workflows/build-fpk.yml` 使用原生 amd64/arm64 runner 并行构建，并由 `verify-both-architectures` 汇总任务再次检查两份产物。
+GitHub Actions 的 `.github/workflows/build-fpk.yml` 使用原生 amd64/arm64 runner 并行构建，并由 `verify-both-architectures` 汇总任务再次检查两份产物。应用启动时将自身 `runtime/lib` 注入 `LD_LIBRARY_PATH`，这是为了兼容当前 `nodejs_v26` 插件缺失 `libatomic.so.1` 的 fnOS 环境。
 
 ## 命名与格式
 
@@ -99,7 +100,7 @@ GitHub Actions 的 `.github/workflows/build-fpk.yml` 使用原生 amd64/arm64 ru
 - `node:test`；业务测试使用 `*.test.ts`，构建/发布脚本测试使用 `*.test.mjs`，统一由 `scripts/test.mjs` 运行。
 - 覆盖重点：身份解析、路径穿越、跨用户访问、Cookie 注入、Location 改写、WebSocket 升级。
 - `test/fixtures/mock-harness.mjs` 模拟 `dsh web` 的 token 交换与 401 行为；新增代理行为时优先扩展它，而不是依赖真实上游。
-- `test/release-config.test.mjs` 校验 Node 26 固定版本、双架构声明、fnOS/Node/ELF 映射和同架构构建约束。
+- `test/release-config.test.mjs` 校验 Node 26 基线、`nodejs_v26` 依赖、libatomic 校验和、双架构声明、ELF 映射和同架构构建约束。
 - 提交前：`node scripts/test.mjs`。
 
 ## fnOS `trimacl` 注意事项
@@ -120,5 +121,5 @@ GitHub Actions 的 `.github/workflows/build-fpk.yml` 使用原生 amd64/arm64 ru
 3. `arm64` 构建机运行 `npm run release -- --arch arm64`，严格验证通过。
 4. 确认 `dist/` 同时存在两个架构的 FPK，文件名、版本和 SHA-256 正确。
 5. 正式发布包使用管理员证书签名；unsigned 包只允许内部验证。
-6. 在两类真机验证：安装、桌面入口、App 入口、创建两个项目、跨项目不串数据、重启后会话仍在。
+6. 在两类真机验证：安装 `nodejs_v26` 依赖、安装应用、桌面入口、App 入口、创建两个项目、跨项目不串数据、重启后会话仍在。
 7. 升级验证：旧版本数据保留、`shared.env` 仍生效、失败可回滚到旧 FPK + 旧快照。

@@ -1,4 +1,3 @@
-import { existsSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 
 /** Harness launch facts resolved once at process start. */
@@ -54,12 +53,10 @@ function readPositiveInt(env: Env, name: string, fallback: number): number {
   return value
 }
 
-/** Resolve the bundled Node runtime, falling back to the current executable. */
-function resolveNodeExecutable(appDest: string, env: Env): string {
+/** Resolve the fnOS nodejs_v26 executable, falling back to the supervisor process. */
+function resolveNodeExecutable(_appDest: string, env: Env): string {
   const configured = env.DSH_FNOS_NODE
   if (configured !== undefined && configured.trim() !== '') return resolve(configured)
-  const bundled = join(appDest, 'runtime', 'node', 'bin', 'node')
-  if (existsSync(bundled)) return bundled
   return process.execPath
 }
 

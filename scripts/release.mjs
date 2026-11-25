@@ -36,9 +36,7 @@ async function main() {
   const result = await packageFpk({
     arch: target.id,
     harnessDir: payload,
-    nodeVersion: config.nodeVersion,
     allowMissingPayload: false,
-    withoutNode: false,
   })
   console.log(`release: ${target.id} ready -> ${result.artifact}`)
 }

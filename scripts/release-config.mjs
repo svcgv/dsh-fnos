@@ -47,6 +47,24 @@ export async function loadReleaseConfig() {
   if (typeof parsed.harnessVersion !== 'string' || parsed.harnessVersion.trim() === '') {
     throw new Error('release.json harnessVersion must be a non-empty version')
   }
+  if (parsed.nodeRuntimeDependency !== 'nodejs_v26') {
+    throw new Error('release.json nodeRuntimeDependency must be nodejs_v26')
+  }
+  if (
+    parsed.libatomic === null
+    || typeof parsed.libatomic !== 'object'
+    || typeof parsed.libatomic.version !== 'string'
+    || parsed.libatomic.version.trim() === ''
+    || parsed.libatomic.sha256 === null
+    || typeof parsed.libatomic.sha256 !== 'object'
+  ) {
+    throw new Error('release.json libatomic metadata is incomplete')
+  }
+  for (const required of REQUIRED_ARCHITECTURES) {
+    if (!/^[0-9a-f]{64}$/u.test(parsed.libatomic.sha256[required] ?? '')) {
+      throw new Error(`release.json libatomic sha256 is missing for ${required}`)
+    }
+  }
   if (!Array.isArray(parsed.architectures)) {
     throw new Error('release.json architectures must be an array')
   }
@@ -61,7 +79,12 @@ export async function loadReleaseConfig() {
   }
   cachedReleaseConfig = Object.freeze({
     nodeVersion: parsed.nodeVersion,
+    nodeRuntimeDependency: parsed.nodeRuntimeDependency,
     harnessVersion: parsed.harnessVersion,
+    libatomic: Object.freeze({
+      version: parsed.libatomic.version,
+      sha256: Object.freeze({ ...parsed.libatomic.sha256 }),
+    }),
     architectures: Object.freeze(architectures),
   })
   return cachedReleaseConfig

@@ -6,6 +6,8 @@ APP="${TRIM_APPDEST:?}"
 VAR="${TRIM_PKGVAR:?}"
 LOG="${VAR}/dsh-fnos.log"
 PID_FILE="${VAR}/dsh-fnos.pid"
+NODE_APP="${DSH_FNOS_NODE_APP:-/var/apps/nodejs_v26/target/bin/node}"
+RUNTIME_LIB="${APP}/runtime/lib"
 NODE=""
 
 log_msg() {
@@ -24,6 +26,16 @@ node_major() {
     "$1" -p 'process.versions.node.split(".")[0]' 2>/dev/null
 }
 
+node_status() {
+    local output
+    output="$("$1" -p 'process.versions.node' 2>&1)"
+    if [ "$?" -eq 0 ]; then
+        printf 'Node.js %s' "${output}"
+    else
+        printf '%s' "${output:-无法执行}"
+    fi
+}
+
 supports_node() {
     local major
     major="$(node_major "$1")"
@@ -33,10 +45,9 @@ supports_node() {
 pick_node() {
     local candidate
     for candidate in \
-        "${APP}/runtime/node/bin/node" \
+        "${NODE_APP}" \
         "${DSH_FNOS_NODE:-}" \
-        "$(command -v node 2>/dev/null || true)" \
-        /var/apps/nodejs_v26/target/bin/node
+        "$(command -v node 2>/dev/null || true)"
     do
         if [ -n "${candidate}" ] && [ -x "${candidate}" ] && supports_node "${candidate}"; then
             printf '%s' "${candidate}"
@@ -44,6 +55,15 @@ pick_node() {
         fi
     done
     return 1
+}
+
+prepare_runtime() {
+    if [ -d "${RUNTIME_LIB}" ]; then
+        case ":${LD_LIBRARY_PATH:-}:" in
+            *":${RUNTIME_LIB}:"*) ;;
+            *) export LD_LIBRARY_PATH="${RUNTIME_LIB}${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}" ;;
+        esac
+    fi
 }
 
 read_pid() {
@@ -63,7 +83,8 @@ start() {
         return 0
     fi
 
-    NODE="$(pick_node)" || fail "未找到可用的 Node.js 运行时（需要 Node.js 26）"
+    prepare_runtime
+    NODE="$(pick_node)" || fail "nodejs_v26 插件运行时不可用或不是 Node.js 26；诊断：$(node_status "${NODE_APP}")"
     [ -f "${APP}/server/index.js" ] || fail "应用文件不完整：缺少 server/index.js"
     [ -f "${APP}/harness/entry.js" ] || log_msg "WARN: 缺少 harness/entry.js，打开项目时会启动失败"
 

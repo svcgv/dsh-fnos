@@ -1,10 +1,10 @@
-import { chmod, cp, mkdir, readFile, readdir, stat, writeFile } from 'node:fs/promises'
+import { chmod, cp, mkdir, readFile, readdir, writeFile } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { build, copyTree, normalizeModes, removeTree, root, run } from './build.mjs'
 import { validateHarnessPayload } from './build-harness-payload.mjs'
-import { stageNodeRuntime } from './node-runtime.mjs'
+import { stageRuntimeLibraries } from './runtime-libraries.mjs'
 import {
   architectureSpec,
   loadReleaseConfig,
@@ -21,8 +21,8 @@ function parseArgs(argv) {
       if (value === undefined || value.startsWith('--')) throw new Error(`${argument} requires a value`)
       values[argument.slice(2)] = value
       index += 1
-    } else if (argument === '--allow-missing-payload' || argument === '--without-node') {
-      values[argument === '--without-node' ? 'withoutNode' : 'allowMissingPayload'] = true
+    } else if (argument === '--allow-missing-payload') {
+      values.allowMissingPayload = true
     } else if (argument.startsWith('--')) {
       throw new Error(`unknown argument ${argument}`)
     } else {
@@ -74,22 +74,17 @@ export async function packageFpk(options) {
     console.warn('package: Harness payload missing; artifact is development-only')
   }
 
-  const nodeVersion = options.nodeVersion ?? config.nodeVersion
-  if (!options.withoutNode) {
-    const runtimeDir = join(stageFpk, 'app', 'runtime', 'node')
-    const source = await stageNodeRuntime(runtimeDir, {
-      arch: target.id,
-      version: nodeVersion,
-      sourceDir: options.nodeDir ?? process.env.DSH_FNOS_NODE_DIR,
-    })
-    const size = (await stat(join(runtimeDir, 'bin', 'node'))).size
-    console.log(`package: bundled Node ${nodeVersion} ${target.id} from ${source} (${(size / 1024 / 1024).toFixed(0)} MiB)`)
-  }
+  const runtimeLibDir = join(stageFpk, 'app', 'runtime', 'lib')
+  await stageRuntimeLibraries(runtimeLibDir, { arch: target.id, libatomic: config.libatomic })
+  console.log(`package: staged libatomic ${config.libatomic.version} ${target.id}`)
 
   const manifestPath = join(stageFpk, 'manifest')
+  const packageJson = JSON.parse(await readFile(join(root, 'package.json'), 'utf8'))
   const manifest = await readFile(manifestPath, 'utf8')
-  const rewritten = manifest.replace(/^platform\s*=\s*.*$/mu, `platform               = ${target.fnosPlatform}`)
-  if (rewritten === manifest) throw new Error(`manifest has no platform field: ${manifestPath}`)
+  if (!/^platform\s*=/mu.test(manifest)) throw new Error(`manifest has no platform field: ${manifestPath}`)
+  if (!/^version\s*=/mu.test(manifest)) throw new Error(`manifest has no version field: ${manifestPath}`)
+  const withPlatform = manifest.replace(/^platform\s*=\s*.*$/mu, `platform               = ${target.fnosPlatform}`)
+  const rewritten = withPlatform.replace(/^version\s*=\s*.*$/mu, `version               = ${packageJson.version}`)
   await writeFile(manifestPath, rewritten)
 
   // fnpack copies stat modes verbatim; normalize ACL-managed modes first.
@@ -98,19 +93,15 @@ export async function packageFpk(options) {
     await chmod(join(stageFpk, 'cmd', script), 0o755)
   }
   await chmod(manifestPath, 0o644)
-  const bundledNode = join(stageFpk, 'app', 'runtime', 'node', 'bin', 'node')
-  if (existsSync(bundledNode)) await chmod(bundledNode, 0o755)
-
   run(process.env.FNPACK ?? 'fnpack', fnpackArgs(stageRoot), { cwd: stageRoot })
   const produced = join(stageRoot, 'dsh-fnos.fpk')
   if (!existsSync(produced)) throw new Error(`fnpack did not create ${produced}`)
 
-  const packageJson = JSON.parse(await readFile(join(root, 'package.json'), 'utf8'))
   const artifact = join(root, 'dist', `dsh-fnos-${packageJson.version}-linux-${target.id}.fpk`)
   await mkdir(join(root, 'dist'), { recursive: true })
   await cp(produced, artifact)
   await chmod(artifact, 0o644)
-  if (options.allowMissingPayload || options.withoutNode) {
+  if (options.allowMissingPayload) {
     console.warn('package: development artifact produced; strict release verification was skipped')
     return { artifact, summary: undefined }
   }
@@ -122,15 +113,12 @@ export async function packageFpk(options) {
 
 async function main() {
   const args = parseArgs(process.argv.slice(2))
-  const config = await loadReleaseConfig()
   const arch = normalizeArchitecture(args.arch ?? process.env.DSH_FNOS_ARCH ?? process.arch)
   const harnessDir = args.harness ?? process.env.DSH_FNOS_HARNESS_PAYLOAD ?? join(root, 'packaging', 'fpk', 'app', 'harness')
   return packageFpk({
     arch,
     harnessDir: existsSync(join(harnessDir, 'entry.js')) ? harnessDir : undefined,
     allowMissingPayload: args.allowMissingPayload,
-    withoutNode: args.withoutNode,
-    nodeVersion: config.nodeVersion,
   })
 }
 

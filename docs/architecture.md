@@ -18,21 +18,31 @@
 | 配置 | 解析 `TRIM_*` 与开发覆盖 | `src/config.ts` |
 | 身份 | 只从 `x-trim-userid` 取身份，校验数字格式 | `src/identity.ts` |
 | 项目存储 | 创建/列出/删除，归属校验，路径约束 | `src/projects.ts` |
-| 实例管理 | 启动 `dsh`、解析 token、持有 Cookie、空闲回收 | `src/harness.ts` |
+| 实例管理 | 使用 `nodejs_v26` 启动 `dsh`、解析 token、持有 Cookie、空闲回收 | `src/harness.ts` |
 | 反向代理 | HTTP/WS 转发、Header 重写、Cookie 隔离、Location 改写 | `src/proxy.ts` |
 | HTTP 层 | 路由、静态 UI、JSON API、权限判断 | `src/server.ts` |
 | 入口 | 监听 Unix Socket、优雅退出 | `src/index.ts` |
 
 ## 发布架构
 
-fnOS 的 `manifest.platform` 只允许 `x86`、`arm`、`all`。本应用的 Harness payload 与内置 Node 运行时包含架构相关二进制，因此不能用 `all` 表示双架构；发布链会生成两个独立 FPK：
+fnOS 的 `manifest.platform` 只允许 `x86`、`arm`、`all`。本应用的 Harness payload 与 `libatomic` 兼容库包含架构相关二进制，因此不能用 `all` 表示双架构；发布链会生成两个独立 FPK：
 
-| 产物 | manifest | 内置运行时 | 适用设备 |
+| 产物 | manifest | 运行时组成 | 适用设备 |
 | --- | --- | --- | --- |
-| `dsh-fnos-<version>-linux-amd64.fpk` | `platform=x86` | Node 26 `linux-x64` | x86_64 NAS |
-| `dsh-fnos-<version>-linux-arm64.fpk` | `platform=arm` | Node 26 `linux-arm64` | ARM64 NAS |
+| `dsh-fnos-<version>-linux-amd64.fpk` | `platform=x86` | `nodejs_v26` + amd64 libatomic | x86_64 NAS |
+| `dsh-fnos-<version>-linux-arm64.fpk` | `platform=arm` | `nodejs_v26` + arm64 libatomic | ARM64 NAS |
 
-打包脚本先在独立 staging 目录写入对应 manifest，再调用 `fnpack`，避免源码模板与实际产物架构不一致。打包后验证器会解包 FPK，检查 Node ELF 的 `e_machine` 与 Harness payload 的架构标记。原生日志依赖必须在同架构 Linux runner 上安装，不能由单架构构建机复制生成。
+打包脚本先在独立 staging 目录写入对应 manifest，再调用 `fnpack`，避免源码模板与实际产物架构不一致。打包后验证器会解包 FPK，检查 `nodejs_v26` 依赖、libatomic ELF 的 `e_machine` 与 Harness payload 的架构标记。原生日志依赖必须在同架构 Linux runner 上安装，不能由单架构构建机复制生成。
+
+## Node 运行时依赖
+
+FPK 不在应用目录中复制 Node 二进制，而是在 `manifest` 声明：
+
+```text
+install_dep_apps = nodejs_v26
+```
+
+启动脚本从 `/var/apps/nodejs_v26/target/bin/node` 解析运行时。当前 fnOS 的该插件缺少 `libatomic.so.1`，因此应用在 `runtime/lib/` 携带 Debian 12 的兼容库，并通过仅对应用进程生效的 `LD_LIBRARY_PATH` 注入；不安装或修改宿主系统库。
 
 ## 请求生命周期
 

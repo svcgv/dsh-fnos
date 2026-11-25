@@ -5,7 +5,12 @@ import { join } from 'node:path'
 import { spawnSync } from 'node:child_process'
 import { pathToFileURL } from 'node:url'
 import { root } from './build.mjs'
-import { architectureSpec, detectElfArchitecture, normalizeArchitecture } from './release-config.mjs'
+import {
+  architectureSpec,
+  detectElfArchitecture,
+  loadReleaseConfig,
+  normalizeArchitecture,
+} from './release-config.mjs'
 
 function runChecked(command, args) {
   const result = spawnSync(command, args, { encoding: 'utf8' })
@@ -36,6 +41,8 @@ async function artifactSha256(path) {
 /** Unpack an FPK and verify its architecture, runtime and required files. */
 export async function verifyFpk(file, arch) {
   if (!existsSync(file)) throw new Error(`FPK not found: ${file}`)
+  const config = await loadReleaseConfig()
+  const packageJson = JSON.parse(await readFile(join(root, 'package.json'), 'utf8'))
   const target = architectureSpec(arch)
   const tempRoot = join(root, '.local', 'tmp')
   await mkdir(tempRoot, { recursive: true })
@@ -46,6 +53,14 @@ export async function verifyFpk(file, arch) {
     const platform = /^platform\s*=\s*(\S+)/mu.exec(manifest)?.[1]
     if (platform !== target.fnosPlatform) {
       throw new Error(`manifest platform is ${JSON.stringify(platform)}, expected ${target.fnosPlatform}`)
+    }
+    const version = /^version\s*=\s*(\S+)/mu.exec(manifest)?.[1]
+    if (version !== packageJson.version) {
+      throw new Error(`manifest version is ${JSON.stringify(version)}, expected ${packageJson.version}`)
+    }
+    const dependencies = /^install_dep_apps\s*=\s*(.*)$/mu.exec(manifest)?.[1]?.split(':') ?? []
+    if (!dependencies.includes(config.nodeRuntimeDependency)) {
+      throw new Error(`manifest does not depend on ${config.nodeRuntimeDependency}`)
     }
 
     for (const required of ['cmd/main', 'app.tgz']) {
@@ -61,19 +76,19 @@ export async function verifyFpk(file, arch) {
       `harness/node_modules/@koromix/koffi-linux-${target.nodeArch}`,
       `harness/node_modules/@deepseek-ai/node-addon-system-linux-${target.nodeArch}`,
       `harness/node_modules/sherpa-onnx-linux-${target.nodeArch}`,
-      'runtime/node/bin/node',
-      'runtime/node/VERSION',
+      'runtime/lib/libatomic.so.1',
+      'runtime/lib/VERSION',
     ]) {
       if (!existsSync(join(appDir, required))) throw new Error(`FPK is missing app/${required}`)
     }
 
-    const runtimeVersion = (await readFile(join(appDir, 'runtime', 'node', 'VERSION'), 'utf8')).trim()
-    if (!/^26\.\d+\.\d+$/u.test(runtimeVersion)) {
-      throw new Error(`bundled Node version is ${JSON.stringify(runtimeVersion)}, expected Node.js 26`)
+    const libatomicVersion = (await readFile(join(appDir, 'runtime', 'lib', 'VERSION'), 'utf8')).trim()
+    if (libatomicVersion !== config.libatomic.version) {
+      throw new Error(`libatomic version is ${JSON.stringify(libatomicVersion)}, expected ${config.libatomic.version}`)
     }
-    const elf = await detectElfArchitecture(join(appDir, 'runtime', 'node', 'bin', 'node'))
+    const elf = await detectElfArchitecture(join(appDir, 'runtime', 'lib', 'libatomic.so.1'))
     if (elf.architecture !== target.id) {
-      throw new Error(`bundled Node ELF is ${elf.architecture}, expected ${target.id}`)
+      throw new Error(`libatomic ELF is ${elf.architecture}, expected ${target.id}`)
     }
     const marker = JSON.parse(await readFile(join(appDir, 'harness', '.dsh-fnos-arch.json'), 'utf8'))
     if (marker.architecture !== target.id || marker.fnosPlatform !== target.fnosPlatform) {
@@ -84,7 +99,8 @@ export async function verifyFpk(file, arch) {
       file,
       architecture: target.id,
       fnosPlatform: target.fnosPlatform,
-      nodeVersion: runtimeVersion,
+      nodeRuntimeDependency: config.nodeRuntimeDependency,
+      libatomicVersion,
       harnessVersion: marker.harnessVersion,
       sha256: await artifactSha256(file),
     }

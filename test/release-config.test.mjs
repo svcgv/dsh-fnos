@@ -13,9 +13,13 @@ import {
   readElfArchitecture,
 } from '../scripts/release-config.mjs'
 
-test('pins Node 26 and both release architectures', async () => {
+test('pins Node 26, the nodejs_v26 dependency and both release architectures', async () => {
   const config = await loadReleaseConfig()
   assert.match(config.nodeVersion, /^26\.\d+\.\d+$/u)
+  assert.equal(config.nodeRuntimeDependency, 'nodejs_v26')
+  assert.match(config.libatomic.version, /^12\./u)
+  assert.match(config.libatomic.sha256.amd64, /^[0-9a-f]{64}$/u)
+  assert.match(config.libatomic.sha256.arm64, /^[0-9a-f]{64}$/u)
   assert.deepEqual([...config.architectures], [...REQUIRED_ARCHITECTURES])
 })
 
