@@ -4,6 +4,7 @@ import { dirname, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { spawnSync } from 'node:child_process'
 import { normalizeModes, root } from './build.mjs'
+import { patchAttachmentLocalFsync, verifyAttachmentLocalPatch } from './attachment-local-patch.mjs'
 import {
   architectureSpec,
   assertNativeTarget,
@@ -72,6 +73,7 @@ export async function validateHarnessPayload(directory, arch) {
   if (missing.length > 0) {
     throw new Error(`Harness payload is missing Linux/${target.nodeArch} native packages: ${missing.join(', ')}`)
   }
+  await verifyAttachmentLocalPatch(directory)
   return marker
 }
 
@@ -120,6 +122,7 @@ export async function buildHarnessPayload(options) {
   }
 
   await prune(dest)
+  await patchAttachmentLocalFsync(dest)
   const relative = entry.slice(dest.length + 1).split('\\').join('/')
   await writeFile(join(dest, 'entry.js'), `import { runCli } from './${relative}'\n\nawait runCli()\n`)
   await writeFile(join(dest, '.dsh-fnos-arch.json'), `${JSON.stringify({
