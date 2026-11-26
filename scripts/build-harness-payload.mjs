@@ -69,6 +69,7 @@ const payloadExtensions = [
   join('browser-plugin', 'panel', 'panel.css'),
   join('browser-worker', 'worker.mjs'),
   join('browser-worker', 'live-panel.mjs'),
+  join('browser-worker', 'browser-url.mjs'),
   join('workspace.patch.yml'),
 ]
 

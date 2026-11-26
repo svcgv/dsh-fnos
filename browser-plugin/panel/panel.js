@@ -85,6 +85,7 @@
     reconnectTimer: null,
 
     lastState: null,
+    pendingPermission: null,
     lastError: '',
     lastSeq: -1,
     frameSize: null,
@@ -248,7 +249,41 @@
       class: 'dsh-bp-placeholder',
       text: '等待远端画面…'
     })
-    const view = createElement('div', { class: 'dsh-bp-view' }, [canvas, placeholder])
+    const permissionTitle = createElement('div', {
+      class: 'dsh-bp-permission-title',
+      text: '模型请求访问网站'
+    })
+    const permissionUrl = createElement('div', { class: 'dsh-bp-permission-url' })
+    const permissionHint = createElement('div', {
+      class: 'dsh-bp-permission-hint',
+      text: '批准后，模型可在此浏览器中读取和操作该页面。请确认地址可信。'
+    })
+    const permissionAllow = createElement('button', {
+      class: 'dsh-bp-permission-button dsh-bp-permission-allow',
+      type: 'button',
+      text: '允许本次访问'
+    })
+    const permissionDeny = createElement('button', {
+      class: 'dsh-bp-permission-button dsh-bp-permission-deny',
+      type: 'button',
+      text: '拒绝'
+    })
+    const permission = createElement('div', {
+      class: 'dsh-bp-permission',
+      role: 'alertdialog',
+      'aria-modal': 'true',
+      'aria-labelledby': 'dsh-bp-permission-title'
+    }, [
+      createElement('div', { class: 'dsh-bp-permission-card' }, [
+        permissionTitle,
+        permissionUrl,
+        permissionHint,
+        createElement('div', { class: 'dsh-bp-permission-actions' }, [permissionDeny, permissionAllow])
+      ])
+    ])
+    permission.hidden = true
+    permissionTitle.id = 'dsh-bp-permission-title'
+    const view = createElement('div', { class: 'dsh-bp-view' }, [canvas, placeholder, permission])
 
     const connEl = createElement('span', { class: 'dsh-bp-conn', text: '未连接' })
     const sizeEl = createElement('span', { class: 'dsh-bp-size', text: '—' })
@@ -302,6 +337,11 @@
       canvas,
       placeholder,
       view,
+      permission,
+      permissionUrl,
+      permissionAllow,
+      permissionDeny,
+      permissionHint,
       connEl,
       sizeEl,
       fpsEl,
@@ -339,6 +379,9 @@
     if (session.disabled) {
       dotState = 'off'
       connectionText = '浏览器面板未启用'
+    } else if (session.pendingPermission) {
+      dotState = 'loading'
+      connectionText = '等待访问授权'
     } else if (session.wsConnected) {
       if (session.paused) {
         dotState = 'paused'
@@ -421,11 +464,13 @@
     attachDocumentInputListeners()
     syncSubscription()
     renderStatus()
-    ui.canvas.focus({ preventScroll: true })
+    if (session.pendingPermission) ui.permissionAllow.focus({ preventScroll: true })
+    else ui.canvas.focus({ preventScroll: true })
   }
 
   function closePanel() {
     if (!session.panelOpen || !ui) return
+    if (session.pendingPermission) respondPermission(false)
     releaseAllInputs()
     session.panelOpen = false
     session.paused = false
@@ -518,6 +563,7 @@
     return (
       session.panelOpen &&
       !session.paused &&
+      session.pendingPermission === null &&
       session.wsConnected &&
       session.ws !== null &&
       session.ws.readyState === 1
@@ -682,11 +728,61 @@
       case 'show':
         openPanel()
         break
+      case 'permission':
+        openPanel()
+        showPermission(message)
+        break
+      case 'permission-clear':
+        clearPermission(message.requestId)
+        break
       case 'error':
         setError(typeof message.message === 'string' ? message.message : '服务端返回错误')
         break
       default:
         break
+    }
+  }
+
+  function showPermission(message) {
+    if (!ui || typeof message.requestId !== 'string' || typeof message.url !== 'string') return
+    session.pendingPermission = { requestId: message.requestId, url: message.url, scope: message.scope }
+    ui.permissionUrl.textContent = message.url
+    ui.permissionHint.textContent = message.scope === 'local'
+      ? '目标是本机服务。批准后，模型可读取和操作该页面，请确认端口和应用来源。'
+      : message.scope === 'lan'
+        ? '目标是局域网服务。批准后，模型可访问该地址并读取页面内容。'
+        : '目标是公网网站。批准后，模型可读取和操作该页面，请确认地址可信。'
+    ui.permissionUrl.title = message.url
+    ui.permission.hidden = false
+    ui.permissionAllow.disabled = false
+    ui.permissionDeny.disabled = false
+    renderStatus()
+    if (session.panelOpen) ui.permissionAllow.focus({ preventScroll: true })
+  }
+
+  function clearPermission(requestId) {
+    if (!ui) return
+    if (requestId && session.pendingPermission && session.pendingPermission.requestId !== requestId) return
+    session.pendingPermission = null
+    ui.permission.hidden = true
+    ui.permissionUrl.textContent = ''
+    ui.permissionUrl.title = ''
+    ui.permissionAllow.disabled = false
+    ui.permissionDeny.disabled = false
+    renderStatus()
+    if (session.panelOpen) ui.canvas.focus({ preventScroll: true })
+  }
+
+  function respondPermission(allow) {
+    const pending = session.pendingPermission
+    if (!pending) return
+    if (!sendMessage({ type: 'permission-response', requestId: pending.requestId, allow: allow === true })) {
+      setError('访问授权响应发送失败')
+      return
+    }
+    if (ui) {
+      ui.permissionAllow.disabled = true
+      ui.permissionDeny.disabled = true
     }
   }
 
@@ -1080,6 +1176,20 @@
   // 输入：键盘 / 粘贴
   // ---------------------------------------------------------------------------
 
+  function shadowActiveElement() {
+    return ui && ui.shadow ? ui.shadow.activeElement : null
+  }
+
+  function isPanelFocusWithin() {
+    if (!ui) return false
+    const active = shadowActiveElement()
+    return active !== null && (active === ui.toggle || ui.panel.contains(active))
+  }
+
+  function isBrowserCanvasFocused() {
+    return session.panelOpen && !!ui && shadowActiveElement() === ui.canvas
+  }
+
   function isPanelControlTarget(event) {
     if (!ui) return false
     const path = typeof event.composedPath === 'function' ? event.composedPath() : []
@@ -1089,21 +1199,28 @@
       target === ui.grip ||
       target === ui.toggle ||
       target === ui.pauseBtn ||
-      target === ui.closeBtn
+      target === ui.closeBtn ||
+      target === ui.permissionAllow ||
+      target === ui.permissionDeny
     )
   }
 
   function onDocumentKeyDown(event) {
     if (!session.panelOpen) return
 
-    if (event.key === 'Escape') {
+    if (event.key === 'Escape' && isPanelFocusWithin()) {
       event.preventDefault()
       event.stopPropagation()
-      closePanel()
+      if (session.pendingPermission) respondPermission(false)
+      else closePanel()
       return
     }
 
+    if (session.pendingPermission) return
     if (isPanelControlTarget(event)) return
+    // 浏览器只接管明确聚焦在远端画面上的键盘。聊天框、终端或宿主输入框
+    // 获得焦点时，keydown 必须保持完全透传，不能 preventDefault。
+    if (!isBrowserCanvasFocused()) return
 
     // 不劫持宿主的 Ctrl/Cmd/Alt 快捷键，也不碰浏览器保留键。
     if (event.ctrlKey || event.metaKey || event.altKey) return
@@ -1219,10 +1336,13 @@
     ui.toggle.addEventListener('click', togglePanel)
     ui.closeBtn.addEventListener('click', closePanel)
     ui.pauseBtn.addEventListener('click', togglePause)
+    ui.permissionAllow.addEventListener('click', () => respondPermission(true))
+    ui.permissionDeny.addEventListener('click', () => respondPermission(false))
     ui.grip.addEventListener('pointerdown', beginGripDrag)
     ui.grip.addEventListener('keydown', onGripKeyDown)
 
     ui.canvas.addEventListener('mousedown', onCanvasMouseDown)
+    ui.canvas.addEventListener('blur', releaseAllInputs)
     ui.canvas.addEventListener('mouseup', onCanvasMouseUp)
     ui.canvas.addEventListener('mousemove', onCanvasMouseMove)
     ui.canvas.addEventListener('contextmenu', (event) => event.preventDefault())

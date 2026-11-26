@@ -252,6 +252,6 @@ test('real DSH serves the panel, streams a frame and accepts an input event', { 
 
 test('committed patch file still asks for the reviewed fixture marker', async () => {
   const text = await readFile(PATCH, 'utf8')
-  assert.match(text, /fixed-private-fixture-reviewed-v1/u)
-  assert.match(text, /DSH_FNOS_BROWSER_LIVE !== '1'/u)
+  assert.match(text, /network-browser-permission-reviewed-v1/u)
+  assert.match(text, /DSH_FNOS_BROWSER_NETWORK !== '1'/u)
 })

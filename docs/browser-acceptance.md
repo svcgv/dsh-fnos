@@ -1,49 +1,78 @@
-# 浏览器实验能力：管理员验收窗口
+# 浏览器实验能力：管理员网络访问与固定页验收
 
-本功能默认关闭，且**不是**面向普通用户或不可信网站的能力。它只用于在一台可信整机上，由管理员手动验证「Harness 通过 MCP 工具驱动一个隔离的 Chromium 打开内置固定测试页」这条链路。
+本功能默认关闭，只对一个精确匹配的飞牛管理员 uid 生效。它**不是多租户安全边界**，也不应在共享或不可信工作区启用。
 
-## 能力边界
+当前包含两种模式：
 
-- 固定页：`http://127.0.0.1:38179/`（内置 fixture，含 `/500`、`/cut` 两个调试端点）。
-- 工具：`browser_offline_prototype`，唯一动作 `open_test_site`，不接受 URL、HTML 或其他参数。
-- 每个 Agent 独立注册工具与 worker；跨 Agent 调用被拒绝。
-- Chromium 启动参数不包含 `--no-sandbox`；浏览器运行在独立 user/mount/PID/net 命名空间，五组 capability 全零（`NoNewPrivs=1`）。
-- 只允许绑定 `127.0.0.1` 随机高位端口；CDP 只走私有 pipe，不监听端口，不公开 DevTools。
-- 一次只允许一个验收实例；仅 `admin` 且 uid 精确匹配标记文件的用户可打开 `/acceptance/`。
+- **网络浏览模式**：显示在正常 Harness 工作区右侧的「浏览器」面板。模型可请求打开本机、局域网或公网 HTTP/HTTPS 地址，但每次导航都必须由当前登录用户查看完整 URL 后明确批准。
+- **固定页验收模式**：`/app/dsh-fnos/acceptance/` 下的离线验收实例，只能打开内置固定测试页，不接受 URL、HTML 或外部网络。
 
-## 可见浏览器面板（Web GUI）
+## 网络浏览模式
 
-启用上述标记文件后，管理员自己的 Harness 工作区实例会在启动时额外加载一个**可见浏览器面板**：Web GUI 右下角出现「浏览器」按钮，点开后右侧停靠面板实时显示那个隔离 Chromium 的画面；用户在面板里的点击/滚动/键盘输入与 Agent 的 `browser_live_control` 工具操作的是**同一个页面**（内置固定测试页），不是两个浏览器。
+### 能力
 
-- 面板只是查看与输入通道：页面仍由后台 worker 通过私有 CDP pipe 驱动，浏览器不监听 CDP 端口，DevTools 不对客户端开放；面板与宿主之间只走同源 WebSocket，先经过 Harness 的连接准入检查。
-- 面板能打开的唯一页面仍是内置固定测试页；工具不接受 URL/HTML，面板也没有地址栏。
-- 画面是 worker 推来的 JPEG 帧（最长边 1280×800、≤10 fps、慢消费者丢帧），只用于观看；画面可能包含用户在页面里键入的内容，不要录屏、截图上报或写入日志。
-- 该面板默认关闭；`--patch` 叠加文件缺失时会自动降级为普通实例（不会阻止 GUI 启动）。启用后需要重启应用才生效。
-- 已验证：真实 DSH 实例能注入面板脚本、提供面板资源、拒绝未认证的 WebSocket、推送真实 JPEG 帧、接受鼠标输入并拒绝字段非法的输入；**尚未**在真实浏览器里人工点击验收，也未做多客户端、慢网络与触屏/输入法测试。
+- 工具：`browser_live_control`。
+- 动作：`navigate`、`snapshot`、`click`、`fill`、`screenshot`、`diagnostics`。
+- `navigate` 支持本机、局域网和公网 HTTP/HTTPS 地址，包括 localhost、IP 和自定义端口。
+- 每次模型调用 `navigate`，面板都会自动展开并显示完整 URL，必须点击「允许本次访问」才会导航；点击「拒绝」或超时则不会访问该 URL。
+- 模型和用户操作的是同一个页面。用户可以直接在画面里点击、滚动、输入，模型可以读取页面结构和操作元素。
+- 键盘和粘贴仅在浏览器画面获得焦点时转发；聊天输入框获得焦点时不会被面板截获。
+- 跨域顶层跳转会被浏览器拦截；模型需要针对新的目标 URL 再次调用 `navigate` 并重新取得授权。
+- 弹出窗口会被关闭，避免绕过导航授权。
 
-## 明确不支持
+### 明确限制
 
-- 任意网站、DNS、外部网络、代理或 CONNECT。
-- 复用已有的浏览器配置、登录态、Cookie、mydata 或用户 Harness profile。
-- 多租户隔离。同一台 fnOS 上所有账号共享宿主系统用户，同 UID 的进程可以互相读写文件、干扰进程；随机 token、短生命周期、仅管理员单实例只降低暴露面，不构成安全边界。
-- 对 SIGKILL、断电、`setsid` 脱组后代或清理超时的整树回收保证。失败时保留的临时目录只记录未证明项，由管理员人工清理。
-- arm64 未验证：当前只在 `linux-amd64`、Chromium 152（飞牛 `fygo-browser` 1.0.4 提供的程序）上手工测试。ARM 设备不启用。
+- 仅允许 `https:`，不允许 `http:`、`file:`、`data:`、JavaScript URL、用户名密码、自定义端口或 IP 地址。
+- 允许 `localhost`、`127.0.0.1`、局域网 IP、单标签主机名及 `.local`、`.internal`、`.home.arpa` 等地址，但每次仍必须由用户批准。
+- 仍拒绝 `file:`、`data:`、JavaScript URL、带用户名或密码的 URL、未指定主机以及 `0.0.0.0`。
+- 外部网站仍可发起其正常的子资源、WebSocket、遥测和跨站 iframe 请求；批准一个页面意味着允许该页面运行。
+- 登录态和 Cookie 只保存在本次临时浏览器 profile 中；应用或 worker 重启后需要重新登录。
+- 不访问飞牛现有 Chrome 的 profile、Cookie 或登录态。
+- CAPTCHA、MFA、站点条款和账号权限仍需用户自行处理。
 
-## 启用步骤（仅手动验收）
+### 安全边界
 
-1. 安装 `dist/dsh-fnos-<version>-linux-amd64.fpk`（unsigned 手测包），并确保应用商店的 `nodejs_v26` 插件已安装。
-2. 确认飞牛已安装 `fygo-browser`：本功能复用它的 Chromium 程序，但**不读取它的任何配置或会话**。
-3. 在应用数据目录创建两个标记文件（需要管理员权限）：
+- 网络浏览模式保留独立的 user、mount、PID 命名空间和只读最小根文件系统。
+- 网络出口使用宿主网络，因此浏览器可以访问本机、局域网和公网。该模式不是 SSRF、内网隔离或多租户隔离边界；只能用于可信管理员，并依赖每次访问授权。
+- 浏览器没有 `--no-sandbox`，CDP 仍只走私有 pipe，不监听端口，也不向 Web 客户端公开 DevTools。
+- 远端画面可能包含登录信息和用户输入。不要录屏、截图上报或写入日志。
+
+## 使用步骤
+
+1. 安装 `dist/dsh-fnos-<version>-linux-amd64.fpk` 测试包，并确保应用商店已安装 `nodejs_v26` 与 `fygo-browser`。
+2. 在应用数据目录创建两个普通文件：
 
    ```sh
-   sudo sh -c 'echo 1 > /vol1/@appdata/dsh-fnos/browser-acceptance.enabled'
-   sudo sh -c 'echo 1000 > /vol1/@appdata/dsh-fnos/browser-acceptance.uid'
+   sudo sh -c 'printf 1 > /vol1/@appdata/dsh-fnos/browser-acceptance.enabled'
+   sudo sh -c 'printf 1000 > /vol1/@appdata/dsh-fnos/browser-acceptance.uid'
+   sudo chown dsh-fnos:dsh-fnos /vol1/@appdata/dsh-fnos/browser-acceptance.*
+   sudo chmod 600 /vol1/@appdata/dsh-fnos/browser-acceptance.*
    ```
 
-   `browser-acceptance.uid` 必须是准备验收的飞牛账号 uid（数字）；内容非法时开关保持关闭。两个文件必须都是普通文件（符号链接一律忽略）。
-4. 重启应用（应用中心先停后启），确认 `dsh-fnos.log` 出现 `browser-acceptance-enabled`。
-5. 用该 uid 的管理员账号打开 `/app/dsh-fnos/acceptance/`，在界面中发送任意消息：内置离线模型只发出 `open_test_site`，工具结果应为 `{"fixture":true}`。
-6. 验收结束后删除标记文件并重启应用；随后按日志或 manifest 路径人工清理 `experimental-browser-tmp/instance-*` 残留目录。
+   `uid` 必须是实际使用 Harness 的管理员账号。两个文件必须都是普通文件，符号链接不会启用功能。
+
+3. 重启应用，确认 `dsh-fnos.log` 包含 `browser-acceptance-enabled` 且 `livePanel: true`。
+4. 打开该 uid 的 Harness 工作区，点击右下角「浏览器」。
+5. 让模型打开设计稿或本地应用，例如：
+
+   > 使用浏览器打开 https://www.figma.com/ ，然后截图并描述当前页面。
+
+   > 使用浏览器打开 http://127.0.0.1:8080/ 并检查页面。
+
+   > 使用浏览器打开 http://192.168.2.64:8080/ 并检查页面。
+
+6. 面板会显示访问申请。确认域名和完整 URL 后点击「允许本次访问」。
+7. 如果页面跳转到另一个网站，模型需要重新请求导航，用户再次批准。
+
+## 固定页验收模式
+
+`/app/dsh-fnos/acceptance/` 仍使用独立的离线实例和内置验收模型：
+
+- 固定页：`http://127.0.0.1:38179/`
+- 工具：`browser_offline_prototype`
+- 唯一动作：`open_test_site`
+- 不接受 URL、HTML 或外部网络。
+- 使用同一个 uid 标记文件；仅管理员可打开。
 
 ## 关闭方式
 
@@ -51,11 +80,12 @@
 sudo rm -f /vol1/@appdata/dsh-fnos/browser-acceptance.enabled /vol1/@appdata/dsh-fnos/browser-acceptance.uid
 ```
 
-重启应用后开关恢复默认关闭。即使标记文件存在，缺少 `DSH_FNOS_BROWSER_ACCEPTANCE=1` 或 overlay 缺少 `# fixed-private-fixture-reviewed-v1` 标记时，supervisor 也会拒绝启动。
+重启应用后恢复默认关闭。
 
 ## 未证明项与风险
 
-- 真实 Web GUI 中「飞牛登录 → 验收页 → 离线模型 → 工具调用 → 固定页打开」的完整链路由本次手测确认；在此之前只分别验证了 Web 就绪与真实 Agent 工具调用。
-- 认识的启动进程组之外的后代（`setsid` 脱组、worker 被 SIGKILL）无法证明已清理，属于已知残留风险。
-- 临时实例拥有与普通 Harness 相同的宿主权限，标准 Web 工具（含 shell/终端）在实例内可用；因此只能用于整机可信的管理员验收窗口，不得对普通用户开放。
-- 浏览器内核沙箱只观测到主进程 capability 清零与 `chrome://sandbox` 报告，未证明所有子进程与全部内核沙箱层；租户隔离需要独立系统账号、管理员监督进程与专属 cgroup，属于后续工作。
+- 网络浏览使用宿主网络，必须假设获准页面能够访问本机、局域网和公网并发出其正常子请求。
+- 无法通过 TLS 隧道可靠证明所有子资源或重定向的最终来源；当前控制点是顶层导航授权和同源跳转限制。
+- 多飞牛账号共享宿主系统用户；随机 token、单管理员限制和隔离命名空间只降低暴露面，不构成严格租户隔离。
+- 认识的启动进程组之外的后代（`setsid` 脱组、worker 被 SIGKILL）无法证明已清理。
+- arm64 尚未做真实外部网站验收；当前只在 `linux-amd64`、Chromium 152（飞牛 `fygo-browser` 1.0.4）上实测。

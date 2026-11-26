@@ -61,6 +61,7 @@
 | `subscribe` | — | 面板打开且未暂停时发送，请求开始推流 |
 | `unsubscribe` | — | 面板关闭或点击“暂停”时发送，请求停止推流 |
 | `input` | `input`（对象） | 用户输入，见下表 |
+| `permission-response` | `requestId`,`allow` | 用户对一次模型导航申请选择允许或拒绝 |
 
 输入统一放在 `{"type":"input","input":{...}}` 里，`input.kind` 只有三类：
 
@@ -98,6 +99,8 @@
 | `state` | `open`,`url`,`title`,`width`,`height`,`loading` | 标题栏/状态点/尺寸来源 |
 | `frame` | `seq`,`data`（base64 **JPEG**）,`width`,`height` | 画面帧；只接受 JPEG（`/9j/` 前缀），非 JPEG 丢弃并在状态行提示；`seq` 递增，旧帧/重复帧丢弃 |
 | `show` | — | 请求自动展开面板（面板已关闭时自动打开） |
+| `permission` | `requestId`,`kind`,`url` | 模型请求导航；面板显示完整 URL 和允许/拒绝按钮 |
+| `permission-clear` | `requestId` | 处理完成、超时或断开后清除授权提示 |
 | `error` | `message` | 显示在底部状态行，状态点变红 |
 
 帧解码优先 `createImageBitmap`，不支持时回退 `Image` + object URL；只保留最新一帧，
@@ -105,12 +108,13 @@
 
 ## 交互行为
 
-- 右下角“浏览器”按钮开关面板；`Esc` 关闭。
+- 右下角“浏览器”按钮开关面板；无待处理授权时 `Esc` 关闭，有授权提示时 `Esc` 等于拒绝。
 - 面板左边缘可拖动改宽：320px ~ 70% 视口；聚焦拖拽条后用 ←/→ 调 24px，Home/End 到极限。
 - 标题栏：状态点、页面 title、URL、暂停/恢复、关闭。暂停 = 发送 `unsubscribe` 并压暗画面。
+- 网络模式收到 `permission` 时显示覆盖层；授权期间不转发远端鼠标、键盘或粘贴输入。
 - 底部状态行：连接状态、帧尺寸、帧率、最近错误；未启用时优先显示“浏览器面板未启用”。
-- 键盘在面板打开时监听 `document` 的 `keydown`/`keyup`；忽略 Ctrl/Cmd/Alt 组合与
-  F1–F12、Tab（保留给宿主和浏览器）；`Esc` 关闭面板；可打印字符通过 `keyDown.text` 传递。
+- 只有远端画面 canvas 获得焦点时才转发 `keydown`、键盘输入和粘贴；焦点在 Harness 聊天框、终端或其它宿主控件时完全透传。
+- 键盘转发忽略 Ctrl/Cmd/Alt 组合与 F1–F12、Tab（保留给宿主和浏览器）；面板内按 `Esc` 关闭，可打印字符通过 `keyDown.text` 传递。
 - 关闭面板 / 窗口失焦 / 页面隐藏时，会为仍按下的键和鼠标按键补发 `keyUp` /
   `mouseReleased`，避免远端卡键。
 - 断线按指数退避重连（0.5s 起，封顶 15s，带抖动），状态行显示重连次数；只有

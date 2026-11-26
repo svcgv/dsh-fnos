@@ -25,7 +25,7 @@ const harness = new HarnessManager(config, store, logger, optIn.enabled
   ? {
       uid: optIn.uid,
       patch: join(config.appDest, 'harness', 'browser-plugin', 'live.patch.yml'),
-      env: { DSH_FNOS_BROWSER_LIVE: '1', DSH_FNOS_ACCEPTANCE_FIXTURE: '1' },
+      env: { DSH_FNOS_BROWSER_LIVE: '1', DSH_FNOS_BROWSER_NETWORK: '1' },
     }
   : undefined)
 let acceptance: ExperimentalBrowserAcceptance | undefined

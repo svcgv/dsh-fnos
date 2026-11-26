@@ -50,7 +50,7 @@ async function createManager(options: { withOverlay?: boolean } = {}): Promise<{
   const manager = new HarnessManager(config, store, logger, {
     uid: '1000',
     patch,
-    env: { DSH_FNOS_BROWSER_LIVE: '1', DSH_FNOS_ACCEPTANCE_FIXTURE: '1' },
+    env: { DSH_FNOS_BROWSER_LIVE: '1', DSH_FNOS_BROWSER_NETWORK: '1' },
   })
   return { manager, store, root, close: () => manager.stopAll() }
 }
@@ -70,7 +70,8 @@ test('only the opted-in uid receives the browser panel overlay and switches', { 
     assert.ok(allowed.lastIndexOf('--patch') < allowed.indexOf('--no-open'), 'launcher-owned --patch must precede web app flags')
     assert.deepEqual(JSON.parse(await readFile(env1000, 'utf8')), {
       DSH_FNOS_BROWSER_LIVE: '1',
-      DSH_FNOS_ACCEPTANCE_FIXTURE: '1',
+      DSH_FNOS_BROWSER_NETWORK: '1',
+      DSH_FNOS_ACCEPTANCE_FIXTURE: null,
       DSH_FNOS_WORKSPACE_DOCUMENTS: join(root, 'home', 'users', '1000', 'harness'),
       TMPDIR: join(root, 'home', 'users', '1000', 'harness', 'tmp'),
     })
@@ -85,6 +86,7 @@ test('only the opted-in uid receives the browser panel overlay and switches', { 
     assert.equal(normal.includes(browserPatch), false)
     assert.deepEqual(JSON.parse(await readFile(env2000, 'utf8')), {
       DSH_FNOS_BROWSER_LIVE: null,
+      DSH_FNOS_BROWSER_NETWORK: null,
       DSH_FNOS_ACCEPTANCE_FIXTURE: null,
       DSH_FNOS_WORKSPACE_DOCUMENTS: join(root, 'home', 'users', '2000', 'harness'),
       TMPDIR: join(root, 'home', 'users', '2000', 'harness', 'tmp'),
@@ -108,6 +110,7 @@ test('a missing overlay degrades to the normal instance instead of failing start
     assert.deepEqual(normal.slice(2, 4), ['--patch', join(root, 'app', 'harness', 'workspace.patch.yml')])
     assert.deepEqual(JSON.parse(await readFile(env, 'utf8')), {
       DSH_FNOS_BROWSER_LIVE: null,
+      DSH_FNOS_BROWSER_NETWORK: null,
       DSH_FNOS_ACCEPTANCE_FIXTURE: null,
       DSH_FNOS_WORKSPACE_DOCUMENTS: join(root, 'home', 'users', '1000', 'harness'),
       TMPDIR: join(root, 'home', 'users', '1000', 'harness', 'tmp'),

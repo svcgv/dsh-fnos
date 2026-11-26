@@ -3,20 +3,25 @@
 // The panel is a same-origin document-relative script injected into the served
 // index; it streams Chromium screencast frames from a private-CDP worker and
 // forwards pointer/keyboard input to the same page the Agent tools operate on.
-// Fixed-page only: the worker runs the reviewed private HTTP fixture and never
-// opens a caller-supplied URL or HTML. No CDP socket is exposed to the client:
-// the client speaks one small JSON protocol over the authenticated upgrade.
+// Public mode accepts model navigation only after the signed-in user approves
+// each HTTPS URL. Fixture mode remains available for the fixed acceptance page.
+// No CDP socket is exposed to the client: the client speaks one small JSON
+// protocol over the authenticated upgrade.
+import { randomUUID } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import { startWorker } from './worker-client.mjs'
 import { acceptWebSocket, rejectUpgrade } from './live-ws.mjs'
+import { browserTargetScope, normalizeBrowserUrl } from '../browser-worker/browser-url.mjs'
 
 export const inject = ['tools', 'agents', 'webServer', 'connection']
 
 /** Trusted host switch; absent or different means the plugin stays inert. */
 export const LIVE_ENV = 'DSH_FNOS_BROWSER_LIVE'
-/** The fixed-page worker mode the live panel is only allowed to drive. */
+/** Fixed-page acceptance mode. */
 export const FIXTURE_ENV = 'DSH_FNOS_ACCEPTANCE_FIXTURE'
+/** Network browser mode; each model navigation still needs user approval. */
+export const NETWORK_ENV = 'DSH_FNOS_BROWSER_NETWORK'
 
 const ROUTE = '/browser-live'
 const WS_ROUTE = '/browser-live/ws'
@@ -31,10 +36,20 @@ const FIXTURE_TITLE = '内置固定测试页'
 const PANEL_VIEWPORT = Object.freeze({ maxWidth: 1280, maxHeight: 800, quality: 60 })
 const MAX_SESSIONS_PAGE_OPEN = 30_000
 const MAX_TOOL_MS = 30_000
+const MAX_NAVIGATE_MS = 90_000
+const PERMISSION_TIMEOUT_MS = 60_000
 
-/** Both trusted switches must be exactly on; tool input can never enable them. */
+/** Exactly one browser mode is selected by trusted host environment. */
+export function liveBrowserMode(env = process.env) {
+  if (env?.[LIVE_ENV] !== '1') return undefined
+  const fixture = env?.[FIXTURE_ENV] === '1'
+  const networkBrowser = env?.[NETWORK_ENV] === '1'
+  if (fixture === networkBrowser) return undefined
+  return networkBrowser ? 'network' : 'fixture'
+}
+
 export function liveMode(env = process.env) {
-  return env?.[LIVE_ENV] === '1' && env?.[FIXTURE_ENV] === '1'
+  return liveBrowserMode(env) !== undefined
 }
 
 function numberIn(value, min, max) {
@@ -126,31 +141,41 @@ export function validateInput(value) {
   throw new Error('不支持的输入事件种类')
 }
 
-const TOOL_ACTIONS = new Set(['open_test_site', 'snapshot', 'click', 'fill', 'screenshot', 'diagnostics'])
+const FIXTURE_ACTIONS = ['open_test_site', 'snapshot', 'click', 'fill', 'screenshot', 'diagnostics']
+const NETWORK_ACTIONS = ['navigate', 'snapshot', 'click', 'fill', 'screenshot', 'diagnostics']
 const TOOL_TOOL_FIELDS = Object.freeze({
   open_test_site: Object.freeze([]),
+  navigate: Object.freeze(['url']),
   snapshot: Object.freeze([]),
   click: Object.freeze(['generation', 'index']),
   fill: Object.freeze(['generation', 'index', 'value']),
   screenshot: Object.freeze([]),
   diagnostics: Object.freeze([]),
 })
-const TOOL_SCHEMA = {
-  type: 'object',
-  additionalProperties: false,
-  properties: {
-    action: { type: 'string', enum: [...TOOL_ACTIONS], description: '对内置固定测试页的操作' },
-    generation: { type: 'integer', description: 'snapshot 返回的页面代次' },
-    index: { type: 'integer', description: 'snapshot 返回的元素索引' },
-    value: { type: 'string', description: '仅 fill：测试输入' },
-  },
-  required: ['action'],
+const FIXTURE_DESCRIPTION = '操作界面右侧可见的内置固定测试页（用户与 AI 共用同一页面）；只支持内置页，不访问网站或任意 URL。'
+const NETWORK_DESCRIPTION = '操作界面右侧可见的受控浏览器。navigate 支持本机、局域网和公网 HTTP/HTTPS 地址，但每次导航都必须由用户查看完整 URL 后批准。'
+
+export function toolSchema(mode = 'fixture') {
+  if (mode !== 'fixture' && mode !== 'network') throw new Error('无效的浏览器模式')
+  return {
+    type: 'object',
+    additionalProperties: false,
+    properties: {
+      action: { type: 'string', enum: mode === 'network' ? NETWORK_ACTIONS : FIXTURE_ACTIONS, description: mode === 'network' ? '受控浏览器操作' : '对内置固定测试页的操作' },
+      url: { type: 'string', description: '仅 navigate：需要用户批准的 HTTP 或 HTTPS URL' },
+      generation: { type: 'integer', description: 'snapshot 返回的页面代次' },
+      index: { type: 'integer', description: 'snapshot 返回的元素索引' },
+      value: { type: 'string', description: '仅 fill：测试输入' },
+    },
+    required: ['action'],
+  }
 }
-const TOOL_DESCRIPTION = '操作界面右侧可见的内置固定测试页（用户与 AI 共用同一页面）；只支持内置页，不访问网站或任意 URL。'
 
 /** Validate one tool request; returns the worker fields for the chosen action. */
-export function toolFields(args) {
-  if (args === null || typeof args !== 'object' || Array.isArray(args) || typeof args.action !== 'string' || !TOOL_ACTIONS.has(args.action)) {
+export function toolFields(args, mode = 'fixture') {
+  if (mode !== 'fixture' && mode !== 'network') throw new Error('无效的浏览器模式')
+  const actions = mode === 'network' ? NETWORK_ACTIONS : FIXTURE_ACTIONS
+  if (args === null || typeof args !== 'object' || Array.isArray(args) || typeof args.action !== 'string' || !actions.includes(args.action)) {
     throw new Error('无效的浏览器面板操作')
   }
   const allowed = TOOL_TOOL_FIELDS[args.action]
@@ -159,6 +184,7 @@ export function toolFields(args) {
     throw new Error('元素引用无效')
   }
   if (args.action === 'fill' && (typeof args.value !== 'string' || args.value.length > 4096)) throw new Error('输入内容无效')
+  if (args.action === 'navigate') return { url: normalizeBrowserUrl(args.url) }
   return Object.fromEntries(allowed.filter(key => key in args).map(key => [key, args[key]]))
 }
 
@@ -178,37 +204,72 @@ function sendJson(connection, value) {
  * One shared browser per plugin process: viewers and Agent tools drive the
  * same page, so frames and input stay consistent.
  */
-class LiveBrowser {
+export class LiveBrowser {
   #worker = null
   #starting = null
   #screencasting = false
   #tail = Promise.resolve()
   #disposed = false
+  #connections = new Set()
   #viewers = new Set()
+  #permission = null
+  #lastState
   #logger
-  #onState
+  #mode
   #workerFactory
 
-  constructor(logger, onState, workerFactory = startWorker) {
+  constructor(logger, mode = 'fixture', workerFactory = startWorker) {
+    if (mode !== 'fixture' && mode !== 'network') throw new Error('无效的浏览器模式')
     this.#logger = logger
-    this.#onState = onState
+    this.#mode = mode
     this.#workerFactory = workerFactory
+    this.#lastState = {
+      open: true,
+      url: mode === 'fixture' ? FIXTURE_URL : 'about:blank',
+      title: mode === 'fixture' ? FIXTURE_TITLE : '浏览器',
+      width: PANEL_VIEWPORT.maxWidth,
+      height: PANEL_VIEWPORT.maxHeight,
+      loading: false,
+    }
   }
 
   get worker() { return this.#worker }
   get viewerCount() { return this.#viewers.size }
+  get connectionCount() { return this.#connections.size }
+  get mode() { return this.#mode }
 
-  #broadcast(value) {
+  connect(connection) {
+    if (this.#disposed) throw new Error('浏览器面板已关闭')
+    this.#connections.add(connection)
+    if (this.#permission !== null) sendJson(connection, this.#permission.message)
+  }
+
+  disconnect(connection) {
+    this.#viewers.delete(connection)
+    this.#connections.delete(connection)
+    if (this.#connections.size === 0 && this.#permission !== null) {
+      this.#permission.deny(new Error('浏览器面板已断开，访问未获批准'))
+    }
+  }
+
+  #broadcastTo(connections, value) {
     let sent = 0
-    for (const connection of this.#viewers) {
-      if (connection.closed) { this.#viewers.delete(connection); continue }
+    for (const connection of connections) {
+      if (connection.closed) { this.#connections.delete(connection); this.#viewers.delete(connection); continue }
       if (connection.sendText(JSON.stringify(value))) sent += 1
     }
     return sent
   }
 
+  #broadcast(value) { return this.#broadcastTo(this.#viewers, value) }
+  #broadcastControl(value) { return this.#broadcastTo(this.#connections, value) }
+
+  #stateMessage() {
+    return { type: 'state', ...this.#lastState }
+  }
+
   #broadcastState() {
-    this.#broadcast({ type: 'state', open: true, url: FIXTURE_URL, title: FIXTURE_TITLE, width: PANEL_VIEWPORT.maxWidth, height: PANEL_VIEWPORT.maxHeight, loading: false })
+    this.#broadcast(this.#stateMessage())
   }
 
   #onEvent(event) {
@@ -226,7 +287,15 @@ class LiveBrowser {
       return
     }
     if (event.event === 'state') {
-      this.#broadcast({ type: 'state', open: true, url: String(event.url ?? FIXTURE_URL), title: String(event.title ?? FIXTURE_TITLE), width: PANEL_VIEWPORT.maxWidth, height: PANEL_VIEWPORT.maxHeight, loading: Boolean(event.loading) })
+      this.#lastState = {
+        open: true,
+        url: String(event.url ?? this.#lastState.url),
+        title: String(event.title ?? this.#lastState.title),
+        width: PANEL_VIEWPORT.maxWidth,
+        height: PANEL_VIEWPORT.maxHeight,
+        loading: Boolean(event.loading),
+      }
+      this.#broadcastState()
     }
   }
 
@@ -241,10 +310,13 @@ class LiveBrowser {
     if (this.#worker !== null) return this.#worker
     if (this.#starting !== null) return this.#starting
     const starting = (async () => {
-      const worker = this.#workerFactory({ acceptanceFixture: true, livePanel: true, onEvent: event => this.#onEvent(event) })
+      const options = this.#mode === 'network'
+        ? { networkBrowser: true, livePanel: true, onEvent: event => this.#onEvent(event) }
+        : { acceptanceFixture: true, livePanel: true, onEvent: event => this.#onEvent(event) }
+      const worker = this.#workerFactory(options)
       this.#worker = worker
       try {
-        await worker.request('open_test_site', {}, AbortSignal.timeout(MAX_SESSIONS_PAGE_OPEN))
+        if (this.#mode === 'fixture') await worker.request('open_test_site', {}, AbortSignal.timeout(MAX_SESSIONS_PAGE_OPEN))
         await worker.request('live_start', { ...PANEL_VIEWPORT }, AbortSignal.timeout(MAX_SESSIONS_PAGE_OPEN))
       } catch (error) {
         this.#worker = null
@@ -272,12 +344,11 @@ class LiveBrowser {
       sendJson(connection, { type: 'error', message: `无法启动浏览器面板：${error instanceof Error ? error.message : String(error)}` })
       return
     }
-    sendJson(connection, { type: 'state', open: true, url: FIXTURE_URL, title: FIXTURE_TITLE, width: PANEL_VIEWPORT.maxWidth, height: PANEL_VIEWPORT.maxHeight, loading: false })
+    sendJson(connection, this.#stateMessage())
+    if (this.#permission !== null) sendJson(connection, this.#permission.message)
   }
 
-  removeViewer(connection) {
-    this.#viewers.delete(connection)
-  }
+  removeViewer(connection) { this.#viewers.delete(connection) }
 
   async input(value) {
     let cleaned
@@ -285,6 +356,7 @@ class LiveBrowser {
       return { ok: false, error: error instanceof Error ? error.message : String(error) }
     }
     if (this.#worker === null) return { ok: false, error: '浏览器尚未启动' }
+    if (this.#permission !== null) return { ok: false, error: '请先处理浏览器访问申请' }
     try {
       await this.#serialize(() => this.#worker.request('live_input', cleaned, AbortSignal.timeout(15_000)))
       return { ok: true }
@@ -293,23 +365,73 @@ class LiveBrowser {
     }
   }
 
+  async #requestNavigationPermission(url, scope, signal) {
+    if (this.#permission !== null) throw new Error('已有浏览器访问申请正在等待处理')
+    if (this.#connections.size === 0) throw new Error('请先打开浏览器面板以批准访问')
+    const requestId = randomUUID()
+    const message = { type: 'permission', requestId, kind: 'navigate', url, scope }
+    this.#broadcastControl({ type: 'show' })
+    const sent = this.#broadcastControl(message)
+    if (sent === 0) throw new Error('请先打开浏览器面板以批准访问')
+    signal?.throwIfAborted()
+    return new Promise((resolve, reject) => {
+      let settled = false
+      const timer = setTimeout(() => deny(new Error('等待浏览器访问授权超时')), PERMISSION_TIMEOUT_MS)
+      timer.unref()
+      const settle = (error) => {
+        if (settled) return
+        settled = true
+        clearTimeout(timer)
+        signal?.removeEventListener('abort', onAbort)
+        this.#permission = null
+        this.#broadcastControl({ type: 'permission-clear', requestId })
+        error ? reject(error) : resolve()
+      }
+      const onAbort = () => settle(signal.reason ?? new Error('访问授权已取消'))
+      const deny = error => settle(error)
+      this.#permission = { requestId, message, allow: () => settle(), deny }
+      signal?.addEventListener('abort', onAbort, { once: true })
+      if (signal?.aborted) onAbort()
+    })
+  }
+
+  respondPermission(connection, message) {
+    if (!this.#connections.has(connection)) throw new Error('浏览器连接无效')
+    if (message === null || typeof message !== 'object' || typeof message.requestId !== 'string' || typeof message.allow !== 'boolean') {
+      throw new Error('访问授权响应无效')
+    }
+    const pending = this.#permission
+    if (pending === null || pending.requestId !== message.requestId) throw new Error('访问申请已过期')
+    if (message.allow) pending.allow()
+    else pending.deny(new Error('用户拒绝访问此地址'))
+    return true
+  }
+
   async invokeTool(args, signal) {
     if (this.#disposed) throw new Error('浏览器面板已关闭')
-    const fields = toolFields(args)
-    let result
-    try {
-      result = await this.#serialize(async () => {
-        await this.ensureWorker()
-        return this.#worker.request(args.action, fields, signal)
-      })
-    } catch (error) {
-      // A failed call may have partially executed; retire the worker so the next
-      // call cannot observe a wedged browser.
-      this.#retireWorker()
-      throw error
-    }
-    if (args.action === 'open_test_site') {
-      this.#broadcast({ type: 'show' })
+    const fields = toolFields(args, this.#mode)
+    const timeout = args.action === 'navigate' ? MAX_NAVIGATE_MS : MAX_TOOL_MS
+    const toolSignal = AbortSignal.any([signal, AbortSignal.timeout(timeout)])
+    const result = await this.#serialize(async () => {
+      await this.ensureWorker()
+      if (args.action === 'navigate') await this.#requestNavigationPermission(fields.url, browserTargetScope(fields.url), toolSignal)
+      try {
+        return await this.#worker.request(args.action, fields, toolSignal)
+      } catch (error) {
+        this.#retireWorker()
+        throw error
+      }
+    })
+    if (args.action === 'open_test_site' || args.action === 'navigate') {
+      if (args.action === 'navigate' && result !== null && typeof result === 'object') {
+        this.#lastState = {
+          ...this.#lastState,
+          url: typeof result.url === 'string' ? result.url : fields.url,
+          title: typeof result.title === 'string' ? result.title : '',
+          loading: result.loading === true,
+        }
+      }
+      this.#broadcastControl({ type: 'show' })
       this.#broadcastState()
     }
     return result
@@ -327,7 +449,9 @@ class LiveBrowser {
   async dispose() {
     if (this.#disposed) return
     this.#disposed = true
-    for (const connection of this.#viewers) { try { connection.close() } catch { /* ignore */ } }
+    this.#permission?.deny(new Error('浏览器面板已关闭'))
+    for (const connection of this.#connections) { try { connection.close() } catch { /* ignore */ } }
+    this.#connections.clear()
     this.#viewers.clear()
     const worker = this.#worker
     this.#worker = null
@@ -345,10 +469,11 @@ class LiveBrowser {
  * tools. Every registered surface is owned by the caller's effect scope.
  */
 export async function activate(ctx, { env = process.env, load = loadHostDeps, workerFactory = startWorker } = {}) {
-  if (!liveMode(env)) return undefined
+  const mode = liveBrowserMode(env)
+  if (mode === undefined) return undefined
   const { createScope, createMcpToolDefinition } = await load()
   const logger = ctx.logger ?? { warn: () => {}, info: () => {} }
-  const browser = new LiveBrowser(logger, () => {}, workerFactory)
+  const browser = new LiveBrowser(logger, mode, workerFactory)
   const disposers = []
 
   async function servePanel(req, res) {
@@ -372,6 +497,7 @@ export async function activate(ctx, { env = process.env, load = loadHostDeps, wo
     let connection
     try {
       connection = acceptWebSocket(req, socket, head)
+      browser.connect(connection)
     } catch { /* acceptWebSocket already rejected the socket */ return }
     connection.onMessage((text) => {
       let message
@@ -383,9 +509,11 @@ export async function activate(ctx, { env = process.env, load = loadHostDeps, wo
         browser.removeViewer(connection)
       } else if (message.type === 'input') {
         browser.input(message.input).then(reply => { if (reply.ok === false) sendJson(connection, { type: 'error', message: reply.error }) })
+      } else if (message.type === 'permission-response') {
+        try { browser.respondPermission(connection, message) } catch (error) { sendJson(connection, { type: 'error', message: String(error?.message ?? error) }) }
       }
     })
-    connection.onClose(() => browser.removeViewer(connection))
+    connection.onClose(() => browser.disconnect(connection))
   }
 
   disposers.push(ctx.webServer.register({ kind: 'prefix', path: ROUTE, handler: servePanel }))
@@ -412,12 +540,11 @@ export async function activate(ctx, { env = process.env, load = loadHostDeps, wo
       scope.ctx.tools.register(createMcpToolDefinition(ctx, {
         name: 'browser_live_control',
         rawName: 'browser_live_control',
-        description: TOOL_DESCRIPTION,
-        inputSchema: TOOL_SCHEMA,
+        description: mode === 'network' ? NETWORK_DESCRIPTION : FIXTURE_DESCRIPTION,
+        inputSchema: toolSchema(mode),
         async call(args, exec) {
           if (exec?.agent !== agent || exec.signal === undefined) throw new Error('需要有效且匹配的 Agent 调用')
-          const signal = AbortSignal.any([exec.signal, AbortSignal.timeout(MAX_TOOL_MS)])
-          const result = await browser.invokeTool(args, signal)
+          const result = await browser.invokeTool(args, exec.signal)
           if (args.action === 'screenshot') {
             if (result?.mime !== 'image/png' || typeof result.base64 !== 'string' || result.base64.length > 16 * 1024 * 1024) throw new Error('截图格式无效')
             return { content: [{ type: 'image', mimeType: 'image/png', data: result.base64 }] }

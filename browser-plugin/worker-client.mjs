@@ -8,7 +8,8 @@ const WORKER = fileURLToPath(new URL('../browser-worker/worker.mjs', import.meta
 const LIMIT = 20 * 1024 * 1024
 const FILESYSTEM_ISOLATION = '--experimental-filesystem-isolation'
 const FIXTURE_ISOLATION = '--experimental-private-http-fixture'
-// Screencast plus input injection; only valid together with the fixed fixture.
+const NETWORK_BROWSER = '--experimental-network-browser'
+// Screencast plus input injection; the live panel pairs with fixture or network browser mode.
 const LIVE_PANEL = '--experimental-live-panel'
 // The worker never inherits the Host environment. The acceptance instance's
 // supervisor sets a private 0700 TMPDIR; passing only that one variable keeps
@@ -17,22 +18,25 @@ const LIVE_PANEL = '--experimental-live-panel'
 const BASE_ENV = Object.freeze({ PATH: '/usr/bin:/bin', LANG: 'C.UTF-8', LD_LIBRARY_PATH: '/var/apps/dsh-fnos/target/runtime/lib' })
 
 /** Exactly one mode switch, chosen by trusted host environment, never by tool input. */
-export function workerArgs(acceptanceFixture = false, livePanel = false) {
+export function workerArgs(acceptanceFixture = false, livePanel = false, networkBrowser = false) {
   if (typeof acceptanceFixture !== 'boolean') throw new Error('无效的验收固定页模式配置')
   if (typeof livePanel !== 'boolean') throw new Error('无效的可见面板模式配置')
-  if (livePanel && !acceptanceFixture) throw new Error('可见面板模式必须与固定测试页模式同时启用')
-  const args = [WORKER, acceptanceFixture ? FIXTURE_ISOLATION : FILESYSTEM_ISOLATION]
+  if (typeof networkBrowser !== 'boolean') throw new Error('无效的网络浏览模式配置')
+  if (acceptanceFixture && networkBrowser) throw new Error('固定测试页模式与网络浏览模式不能同时启用')
+  if (livePanel && !acceptanceFixture && !networkBrowser) throw new Error('可见面板模式必须与浏览器模式同时启用')
+  const args = [WORKER, networkBrowser ? NETWORK_BROWSER : acceptanceFixture ? FIXTURE_ISOLATION : FILESYSTEM_ISOLATION]
   if (livePanel) args.push(LIVE_PANEL)
   return args
 }
 
-/** The only parent variable a fixture worker may inherit: a validated private tmp root. */
-export function workerEnv(acceptanceFixture = false, env = process.env) {
+/** The only parent variable an isolated browser worker may inherit: a private tmp root. */
+export function workerEnv(acceptanceFixture = false, env = process.env, networkBrowser = false) {
   if (typeof acceptanceFixture !== 'boolean') throw new Error('无效的验收固定页模式配置')
-  if (!acceptanceFixture) return { ...BASE_ENV }
+  if (typeof networkBrowser !== 'boolean') throw new Error('无效的网络浏览模式配置')
+  if (!acceptanceFixture && !networkBrowser) return { ...BASE_ENV }
   const tmpdir = env?.TMPDIR
   if (typeof tmpdir !== 'string' || tmpdir.length === 0 || !path.isAbsolute(tmpdir) || tmpdir.includes('\0')) {
-    throw new Error('验收固定页模式需要父进程提供非空绝对路径的 TMPDIR')
+    throw new Error('隔离浏览器模式需要父进程提供非空绝对路径的 TMPDIR')
   }
   return { ...BASE_ENV, TMPDIR: tmpdir }
 }
@@ -42,10 +46,10 @@ export function startWorker(options = {}) {
 }
 
 // spawnImpl is a test seam, never exposed as an agent tool input.
-export function launchWorker(spawnImpl, { acceptanceFixture = false, livePanel = false, onEvent } = {}) {
-  const child = spawnImpl(process.execPath, workerArgs(acceptanceFixture, livePanel), {
+export function launchWorker(spawnImpl, { acceptanceFixture = false, networkBrowser = false, livePanel = false, onEvent } = {}) {
+  const child = spawnImpl(process.execPath, workerArgs(acceptanceFixture, livePanel, networkBrowser), {
     stdio: ['pipe', 'pipe', 'ignore'],
-    env: workerEnv(acceptanceFixture),
+    env: workerEnv(acceptanceFixture, process.env, networkBrowser),
   })
   return createWorkerClient(child, { onEvent })
 }

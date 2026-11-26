@@ -324,6 +324,101 @@
   display: none !important;
 }
 
+/* 访问授权覆盖层：模型请求导航时阻塞远端输入，直到用户明确决定。 */
+.dsh-bp-permission {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgba(5, 8, 12, 0.72);
+  backdrop-filter: blur(3px);
+}
+
+.dsh-bp-permission[hidden] {
+  display: none !important;
+}
+
+.dsh-bp-permission-card {
+  width: min(100%, 470px);
+  padding: 18px;
+  border: 1px solid var(--bp-border-strong);
+  border-radius: 10px;
+  background: var(--bp-surface);
+  box-shadow: var(--bp-shadow);
+}
+
+.dsh-bp-permission-title {
+  color: var(--bp-text);
+  font-size: 14px;
+  font-weight: 650;
+}
+
+.dsh-bp-permission-url {
+  margin-top: 10px;
+  padding: 9px 10px;
+  overflow-wrap: anywhere;
+  border: 1px solid var(--bp-border);
+  border-radius: 7px;
+  background: var(--bp-surface-raised);
+  color: var(--bp-text);
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 11px;
+  line-height: 1.5;
+  user-select: text;
+}
+
+.dsh-bp-permission-hint {
+  margin-top: 10px;
+  color: var(--bp-muted);
+  font-size: 12px;
+}
+
+.dsh-bp-permission-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.dsh-bp-permission-button {
+  min-height: 32px;
+  padding: 0 13px;
+  border: 1px solid var(--bp-border);
+  border-radius: 7px;
+  background: var(--bp-surface-raised);
+  color: var(--bp-text);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.dsh-bp-permission-button:hover {
+  border-color: var(--bp-border-strong);
+}
+
+.dsh-bp-permission-button:focus-visible {
+  outline: 2px solid var(--bp-accent);
+  outline-offset: 1px;
+}
+
+.dsh-bp-permission-button:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
+.dsh-bp-permission-allow {
+  border-color: var(--bp-accent);
+  background: var(--bp-accent);
+  color: #fff;
+}
+
+.dsh-bp-permission-deny {
+  color: var(--bp-danger);
+}
+
 /* 暂停时压暗画面并给出提示（不改变 canvas 内容）。 */
 .dsh-bp-panel[data-paused='1'] .dsh-bp-view::after {
   content: '已暂停';

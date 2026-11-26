@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { activate, liveMode, toolFields, validateInput } from './live.mjs'
+import { LiveBrowser, activate, liveMode, toolFields, toolSchema, validateInput } from './live.mjs'
 
 function fakeContext({ agents = [] } = {}) {
   const registered = []
@@ -55,6 +55,7 @@ function fakeWorkerFactory(calls) {
 }
 
 const LIVE_ENV = { DSH_FNOS_BROWSER_LIVE: '1', DSH_FNOS_ACCEPTANCE_FIXTURE: '1' }
+const NETWORK_ENV = { DSH_FNOS_BROWSER_LIVE: '1', DSH_FNOS_BROWSER_NETWORK: '1' }
 
 test('both trusted switches are required', () => {
   assert.equal(liveMode({}), false)
@@ -62,6 +63,8 @@ test('both trusted switches are required', () => {
   assert.equal(liveMode({ DSH_FNOS_ACCEPTANCE_FIXTURE: '1' }), false)
   assert.equal(liveMode({ DSH_FNOS_BROWSER_LIVE: 'TRUE', DSH_FNOS_ACCEPTANCE_FIXTURE: '1' }), false)
   assert.equal(liveMode(LIVE_ENV), true)
+  assert.equal(liveMode(NETWORK_ENV), true)
+  assert.equal(liveMode({ DSH_FNOS_BROWSER_LIVE: '1', DSH_FNOS_ACCEPTANCE_FIXTURE: '1', DSH_FNOS_BROWSER_NETWORK: '1' }), false)
 })
 
 test('disabled activation registers nothing', async () => {
@@ -113,6 +116,76 @@ test('agent tools are registered per live agent and reject foreign executions', 
   assert.deepEqual(calls.options, { acceptanceFixture: true, livePanel: true, onEvent: calls.options.onEvent })
   assert.deepEqual(calls.ops.slice(0, 2).map((entry) => entry.op), ['open_test_site', 'live_start'])
   assert.ok(scopeDisposed.length === 0)
+})
+
+test('network mode exposes approved local, LAN and public navigation', () => {
+  assert.deepEqual(toolSchema('network').properties.action.enum, ['navigate', 'snapshot', 'click', 'fill', 'screenshot', 'diagnostics'])
+  for (const url of [
+    'https://example.com/design?id=1',
+    'http://example.com/',
+    'http://127.0.0.1:8080/',
+    'http://localhost:3000/',
+    'http://192.168.2.64:8080/',
+    'http://service.internal/',
+    'https://example.com:8443/',
+  ]) {
+    assert.equal(toolFields({ action: 'navigate', url }, 'network').url, new URL(url).href)
+  }
+  for (const url of ['javascript:alert(1)', 'file:///etc/passwd', 'data:text/html,no', 'http://user:pass@example.com/', 'http://0.0.0.0/']) {
+    assert.throws(() => toolFields({ action: 'navigate', url }, 'network'), Error, url)
+  }
+  assert.throws(() => toolFields({ action: 'navigate', url: 'https://example.com' }, 'fixture'), /无效的浏览器面板操作/u)
+})
+
+test('model navigation waits for explicit panel approval and denial keeps the worker', async () => {
+  const messages = []
+  const calls = { ops: [], stopped: false }
+  const connection = {
+    closed: false,
+    sendText(text) { messages.push(JSON.parse(text)); return true },
+    close() { this.closed = true },
+  }
+  const workerFactory = options => {
+    calls.options = options
+    return {
+      async request(op, fields) {
+        calls.ops.push({ op, fields })
+        if (op === 'live_start') return { started: true }
+        if (op === 'navigate') return { url: fields.url, title: 'Example', loading: false }
+        if (op === 'live_stop') return { stopped: true }
+        return { ok: true }
+      },
+      async stop() { calls.stopped = true },
+    }
+  }
+  const browser = new LiveBrowser({ warn() {} }, 'network', workerFactory)
+  browser.connect(connection)
+  await browser.addViewer(connection)
+  const pending = browser.invokeTool({ action: 'navigate', url: 'https://example.com/' }, AbortSignal.timeout(5000))
+  for (let index = 0; index < 20 && !messages.some(message => message.type === 'permission'); index += 1) {
+    await new Promise(resolve => setImmediate(resolve))
+  }
+  const permission = messages.find(message => message.type === 'permission')
+  assert.ok(permission)
+  assert.equal(permission.url, 'https://example.com/')
+  assert.equal(permission.scope, 'public')
+  assert.equal(calls.ops.some(entry => entry.op === 'navigate'), false)
+  browser.respondPermission(connection, { requestId: permission.requestId, allow: true })
+  assert.deepEqual(await pending, { url: 'https://example.com/', title: 'Example', loading: false })
+  assert.equal(calls.ops.filter(entry => entry.op === 'navigate').length, 1)
+
+  const denied = browser.invokeTool({ action: 'navigate', url: 'https://example.com/private' }, AbortSignal.timeout(5000))
+  for (let index = 0; index < 20; index += 1) {
+    const request = messages.filter(message => message.type === 'permission').at(-1)
+    if (request?.url === 'https://example.com/private') {
+      browser.respondPermission(connection, { requestId: request.requestId, allow: false })
+      break
+    }
+    await new Promise(resolve => setImmediate(resolve))
+  }
+  await assert.rejects(denied, /用户拒绝访问此地址/u)
+  assert.equal(calls.stopped, false)
+  await browser.dispose()
 })
 
 test('mouse, key and text events accept only the worker vocabulary', () => {

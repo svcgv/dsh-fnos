@@ -13,6 +13,7 @@ import { createIsolationProbe, spawnIsolatedBrowser } from './isolation.mjs'
 import { assertFixtureControl, createFixtureControl, fixtureUrl } from './fixture-http.mjs'
 import { cleanupOwnedResources, createOwnedGroupRegistry } from './process-groups.mjs'
 import { createLivePanel } from './live-panel.mjs'
+import { normalizeBrowserUrl } from './browser-url.mjs'
 
 const root = '/vol1/@appcenter/fygo-browser/app/vendor/runtime'
 const executable = `${root}/usr/lib/chromium/chromium`
@@ -20,10 +21,12 @@ const libraryPath = [`${root}/usr/lib/x86_64-linux-gnu`, `${root}/lib/x86_64-lin
 const MAX_INPUT = 128 * 1024
 const args=process.argv.slice(2)
 const fixtureMode=args.includes('--experimental-private-http-fixture')
+const networkMode=args.includes('--experimental-network-browser')
 const liveMode=args.includes('--experimental-live-panel')
-const validArgs=new Set(args).size===args.length && (args.length===0 || (args.length===1 && args[0]==='--experimental-filesystem-isolation') || (fixtureMode && args.every(arg=>['--experimental-private-http-fixture','--experimental-live-panel'].includes(arg)))) && (!liveMode || fixtureMode)
-const isolatedMode = fixtureMode || args.includes('--experimental-filesystem-isolation')
+const validArgs=new Set(args).size===args.length && (args.length===0 || (args.length===1 && args[0]==='--experimental-filesystem-isolation') || (fixtureMode && args.every(arg=>['--experimental-private-http-fixture','--experimental-live-panel'].includes(arg))) || (networkMode && liveMode && args.every(arg=>['--experimental-network-browser','--experimental-live-panel'].includes(arg)))) && (!liveMode || fixtureMode || networkMode)
+const isolatedMode = fixtureMode || networkMode || args.includes('--experimental-filesystem-isolation')
 let child, temp, session, buffer = Buffer.alloc(0), nextId = 0, sequence = 0, closed = false, fixtureOpened = false
+let topFrameId, navigationOrigin, pageTargetId
 let cancelRequested = false, stopInput, probe, fixtureControl, groupToken, closePromise
 const ownedGroups = createOwnedGroupRegistry()
 const startupAbort = new AbortController()
@@ -65,7 +68,27 @@ function onMessage(message) {
     if (message.error) p.reject(new Error(`CDP error: ${message.error.message}`)); else p.resolve(message.result)
     return
   }
+  if (networkMode && message.method === 'Target.targetCreated' && message.params?.targetInfo?.type === 'page' && message.params.targetInfo.targetId !== pageTargetId) {
+    void call('Target.closeTarget', { targetId: message.params.targetInfo.targetId }, null).catch(() => {})
+    return
+  }
   if (message.sessionId !== session) return
+  if (message.method === 'Fetch.requestPaused') {
+    const request = message.params
+    if (request.frameId === topFrameId && request.resourceType === 'Document') {
+      let origin
+      try { origin = new URL(request.request.url).origin } catch { origin = undefined }
+      if (navigationOrigin !== undefined && origin === navigationOrigin) {
+        void call('Fetch.continueRequest', { requestId: request.requestId }).catch(() => {})
+      } else {
+        record({ type: 'navigation-blocked' })
+        void call('Fetch.failRequest', { requestId: request.requestId, errorReason: 'BlockedByClient' }).catch(() => {})
+      }
+    } else {
+      void call('Fetch.continueRequest', { requestId: request.requestId }).catch(() => {})
+    }
+    return
+  }
   if (message.method === 'Page.screencastFrame' && liveMode) { livePanel.frame(message.params); return }
   if (message.method === 'Page.frameNavigated' && !message.params.frame.parentId) sequence++
   if (message.method === 'Runtime.consoleAPICalled') record({ type: 'console', level: message.params.type })
@@ -116,7 +139,7 @@ async function start() {
     checkCancelled()
     if (fixtureMode) { fixtureControl = await createFixtureControl(startupAbort.signal); assertFixtureControl(fixtureControl) }
     checkCancelled()
-    child = spawnIsolatedBrowser(isolatedRoot, probe, fixtureControl)
+    child = spawnIsolatedBrowser(isolatedRoot, probe, fixtureControl, { hostNetwork: networkMode })
     child.on('error',()=>{})
     if (child.pid) { groupToken=ownedGroups.register(child); ownedGroups.assertReady(groupToken) }
     if (fixtureMode) fixtureReady = waitFixtureReady(child)
@@ -146,8 +169,14 @@ async function start() {
   if (fixtureControl) { await fixtureControl.dispose(); fixtureControl = undefined }
   checkCancelled()
   const { targetId } = await call('Target.createTarget', { url: 'about:blank' }, null)
+  pageTargetId = targetId
   ;({ sessionId: session } = await call('Target.attachToTarget', { targetId, flatten: true }, null))
   await call('Page.enable'); await call('Runtime.enable'); await call('Network.enable')
+  topFrameId = (await call('Page.getFrameTree')).frameTree.frame.id
+  if (networkMode) {
+    await call('Fetch.enable', { patterns: [{ urlPattern: '*', resourceType: 'Document', requestStage: 'Request' }] })
+    await call('Target.setDiscoverTargets', { discover: true }, null)
+  }
 }
 async function evaluate(expression) {
   const r = await call('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: true, timeout: 5000 })
@@ -194,6 +223,31 @@ async function execute(request) {
       }
       fail('页面加载超时或导航已改变')
     }
+    case 'navigate': {
+      if (!networkMode) fail('当前浏览器模式不允许网络导航')
+      if (Object.keys(request).some(key => !['id', 'op', 'url'].includes(key))) fail('访问请求包含未知字段')
+      const url = normalizeBrowserUrl(request.url)
+      const requested = new URL(url)
+      navigationOrigin = requested.origin
+      const before = await call('Page.getFrameTree')
+      topFrameId = before.frameTree.frame.id
+      const navigation = await call('Page.navigate', { url })
+      if (navigation.errorText || !navigation.frameId || !navigation.loaderId) fail(`页面打开失败：${navigation.errorText ?? '未知错误'}`)
+      const deadline = Date.now() + 20_000
+      let state
+      for (;;) {
+        state = await evaluate(`({href:location.href,title:document.title,ready:document.readyState})`)
+        const frame = (await call('Page.getFrameTree')).frameTree.frame
+        if (frame.id === navigation.frameId && frame.loaderId === navigation.loaderId && state.ready !== 'loading') break
+        if (Date.now() >= deadline) break
+        await new Promise(resolve => setTimeout(resolve, 100))
+      }
+      const finalUrl = typeof state?.href === 'string' ? state.href : url
+      let finalOrigin
+      try { finalOrigin = new URL(finalUrl).origin } catch { finalOrigin = undefined }
+      if (finalOrigin !== navigationOrigin) fail('页面跳转到了未获批准的其他网站，已停止')
+      return { url: finalUrl, title: typeof state?.title === 'string' ? state.title : '', loading: state?.ready === 'loading' }
+    }
     case 'snapshot': {
       const elements = await evaluate(`(globalThis[${JSON.stringify(snapshotKey)}]=${query}).map((e,i)=>({index:i,tag:e.tagName.toLowerCase(),text:e.tagName==='INPUT'&&e.type==='password'?'[REDACTED]':(e.innerText||e.value||e.getAttribute('aria-label')||'').slice(0,200)}))`)
       return { generation: sequence, elements }
@@ -209,7 +263,7 @@ async function execute(request) {
     case 'screenshot': { const r = await call('Page.captureScreenshot', { format: 'png' }); return { mime: 'image/png', base64: r.data } }
     case 'diagnostics': return { events: events.slice() }
     case 'live_start':
-      if (!liveMode || !fixtureOpened) fail('live 需要已打开的固定测试页')
+      if (!liveMode || (fixtureMode && !fixtureOpened)) fail('live 需要有效的浏览器模式')
       return await livePanel.start(request)
     case 'live_stop':
       if (!liveMode) fail('不支持的操作')

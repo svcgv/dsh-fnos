@@ -62,6 +62,10 @@ test('acceptance fixture mode passes the fixed private-fixture switch and nothin
   const workerPath = new URL('../browser-worker/worker.mjs', import.meta.url).pathname
   assert.deepEqual(workerArgs(false), [workerPath, '--experimental-filesystem-isolation'])
   assert.deepEqual(workerArgs(true), [workerPath, '--experimental-private-http-fixture'])
+  assert.deepEqual(workerArgs(false, true, true), [workerPath, '--experimental-network-browser', '--experimental-live-panel'])
+  assert.deepEqual(workerArgs(false, false, true), [workerPath, '--experimental-network-browser'])
+  assert.throws(() => workerArgs(true, true, true), /不能同时启用/)
+  assert.throws(() => workerArgs(false, true), /必须与浏览器模式同时启用/)
   assert.throws(() => workerArgs('1'), /无效的验收固定页模式配置/)
   assert.throws(() => workerArgs({}), /无效的验收固定页模式配置/)
 })
@@ -98,7 +102,7 @@ test('launch in acceptance fixture mode always passes exactly one fixed switch',
   }
 })
 
-test('fixture worker env inherits only a validated private TMPDIR', () => {
+test('isolated worker env inherits only a validated private TMPDIR', () => {
   assert.deepEqual(workerEnv(false, { TMPDIR: '/var/tmp/ignored' }), {
     PATH: '/usr/bin:/bin', LANG: 'C.UTF-8', LD_LIBRARY_PATH: '/var/apps/dsh-fnos/target/runtime/lib',
   })
@@ -106,8 +110,14 @@ test('fixture worker env inherits only a validated private TMPDIR', () => {
     PATH: '/usr/bin:/bin', LANG: 'C.UTF-8', LD_LIBRARY_PATH: '/var/apps/dsh-fnos/target/runtime/lib',
     TMPDIR: '/var/tmp/dsh-acceptance-private',
   })
+  assert.deepEqual(workerEnv(false, { TMPDIR: '/var/tmp/dsh-network-private' }, true), {
+    PATH: '/usr/bin:/bin', LANG: 'C.UTF-8', LD_LIBRARY_PATH: '/var/apps/dsh-fnos/target/runtime/lib',
+    TMPDIR: '/var/tmp/dsh-network-private',
+  })
   for (const env of [{}, { TMPDIR: '' }, { TMPDIR: 'relative/tmp' }, { TMPDIR: '/tmp\0evil' }, { TMPDIR: 42 }]) {
     assert.throws(() => workerEnv(true, env), /需要父进程提供非空绝对路径的 TMPDIR/)
+    assert.throws(() => workerEnv(false, env, true), /需要父进程提供非空绝对路径的 TMPDIR/)
   }
+  assert.throws(() => workerEnv(false, {}, '1'), /无效的网络浏览模式配置/)
   assert.throws(() => workerEnv('1'), /无效的验收固定页模式配置/)
 })
