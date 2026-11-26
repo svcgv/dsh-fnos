@@ -1,0 +1,24 @@
+scripts/attachment-local-patch.mjs
+  s_168480fe9858d2::t_19af7a2a387368 1-90
+scripts/build-harness-payload.mjs
+  s_168480fe9858d2::t_6bf947cc336d22 76
+  s_168480fe9858d2::t_19af7a2a387368 7,125
+test/attachment-local-patch.test.mjs
+  s_168480fe9858d2::t_19af7a2a387368 1-81
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "1b1986c3b21f7db28cb9ce324a8fc9446ca498df",
+  "prompts": {},
+  "sessions": {
+    "s_168480fe9858d2": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a2161d-aa46-71f2-a309-5eea18569508",
+        "model": "deepseek-v4.1-flash"
+      },
+      "human_author": "svcgv <hb1230123@hotmail.com>"
+    }
+  }
+}
