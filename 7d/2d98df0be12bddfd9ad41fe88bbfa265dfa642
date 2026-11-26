@@ -1,0 +1,19 @@
+.github/workflows/build-fpk.yml
+  s_b20c3c760f01fe::t_ab6dac2a2f808d 87,106
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "7d2d98df0be12bddfd9ad41fe88bbfa265dfa642",
+  "prompts": {},
+  "sessions": {
+    "s_b20c3c760f01fe": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a215f7-5658-7622-8324-769d9b5110d4",
+        "model": "deepseek-v4.1-flash"
+      },
+      "human_author": "svcgv <hb1230123@hotmail.com>"
+    }
+  }
+}
