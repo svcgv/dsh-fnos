@@ -1,0 +1,26 @@
+packaging/fpk/manifest
+  s_b20c3c760f01fe::t_62d1d2649236a1 2,21
+.github/workflows/build-fpk.yml
+  s_b20c3c760f01fe::t_b58fef5988d233 107-112
+  s_b20c3c760f01fe::t_62d1d2649236a1 78-106
+package.json
+  s_b20c3c760f01fe::t_62d1d2649236a1 3
+package-lock.json
+  s_b20c3c760f01fe::t_f2731c68b1c47a 3,9
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "8f01a5c6cf29e1030985cd4197858d369049ce6f",
+  "prompts": {},
+  "sessions": {
+    "s_b20c3c760f01fe": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a215f7-5658-7622-8324-769d9b5110d4",
+        "model": "deepseek-v4.1-flash"
+      },
+      "human_author": "svcgv <hb1230123@hotmail.com>"
+    }
+  }
+}
