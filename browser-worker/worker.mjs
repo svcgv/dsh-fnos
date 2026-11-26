@@ -12,14 +12,18 @@ import { Transform } from 'node:stream'
 import { createIsolationProbe, spawnIsolatedBrowser } from './isolation.mjs'
 import { assertFixtureControl, createFixtureControl, fixtureUrl } from './fixture-http.mjs'
 import { cleanupOwnedResources, createOwnedGroupRegistry } from './process-groups.mjs'
+import { createLivePanel } from './live-panel.mjs'
 
 const root = '/vol1/@appcenter/fygo-browser/app/vendor/runtime'
 const executable = `${root}/usr/lib/chromium/chromium`
 const libraryPath = [`${root}/usr/lib/x86_64-linux-gnu`, `${root}/lib/x86_64-linux-gnu`, `${root}/usr/lib`, `${root}/usr/lib/chromium`].join(':')
 const MAX_INPUT = 128 * 1024
-const fixtureMode = process.argv.length === 3 && process.argv[2] === '--experimental-private-http-fixture'
-const isolatedMode = fixtureMode || (process.argv.length === 3 && process.argv[2] === '--experimental-filesystem-isolation')
-let child, temp, session, buffer = Buffer.alloc(0), nextId = 0, sequence = 0, closed = false
+const args=process.argv.slice(2)
+const fixtureMode=args.includes('--experimental-private-http-fixture')
+const liveMode=args.includes('--experimental-live-panel')
+const validArgs=new Set(args).size===args.length && (args.length===0 || (args.length===1 && args[0]==='--experimental-filesystem-isolation') || (fixtureMode && args.every(arg=>['--experimental-private-http-fixture','--experimental-live-panel'].includes(arg)))) && (!liveMode || fixtureMode)
+const isolatedMode = fixtureMode || args.includes('--experimental-filesystem-isolation')
+let child, temp, session, buffer = Buffer.alloc(0), nextId = 0, sequence = 0, closed = false, fixtureOpened = false
 let cancelRequested = false, stopInput, probe, fixtureControl, groupToken, closePromise
 const ownedGroups = createOwnedGroupRegistry()
 const startupAbort = new AbortController()
@@ -36,6 +40,12 @@ for (const signal of ['SIGINT', 'SIGTERM']) process.once(signal, () => abortWork
 function checkCancelled() { if (cancelRequested) throw new Error('启动已取消') }
 const pending = new Map()
 const events = []
+const livePanel=createLivePanel({
+  call,
+  writeFrame:(event,done)=>process.stdout.write(`${JSON.stringify(event)}\n`,done),
+  onError:()=>{if(!closed)process.stdout.write(`${JSON.stringify({event:'live_error',error:'live stream failed'})}\n`)}
+})
+process.stdout.on('error',()=>abortWorker('worker 输出失败'))
 const snapshotKey = `__dsh_${randomBytes(16).toString('hex')}`
 const fail = (message) => { throw new Error(message) }
 function record(entry) { events.push(entry); if (events.length > 100) events.shift() }
@@ -56,6 +66,7 @@ function onMessage(message) {
     return
   }
   if (message.sessionId !== session) return
+  if (message.method === 'Page.screencastFrame' && liveMode) { livePanel.frame(message.params); return }
   if (message.method === 'Page.frameNavigated' && !message.params.frame.parentId) sequence++
   if (message.method === 'Runtime.consoleAPICalled') record({ type: 'console', level: message.params.type })
   if (message.method === 'Runtime.exceptionThrown') record({ type: 'exception' })
@@ -149,6 +160,7 @@ async function execute(request) {
   switch (request.op) {
     case 'open_test_site': {
       if (!fixtureMode || Object.keys(request).some(key=>key!=='op' && key!=='id')) fail('不支持的操作')
+      fixtureOpened=false
       events.length = 0
       const navigation = await call('Page.navigate', {url:fixtureUrl})
       if (navigation.errorText || !navigation.frameId || !navigation.loaderId) fail('固定测试页导航失败')
@@ -157,7 +169,7 @@ async function execute(request) {
         if (before.id===navigation.frameId && before.loaderId===navigation.loaderId && before.url===fixtureUrl) {
           const ready=await evaluate(`document.readyState === "complete" && location.href === ${JSON.stringify(fixtureUrl)}`)
           const after=(await call('Page.getFrameTree')).frameTree.frame
-          if (ready && after.id===navigation.frameId && after.loaderId===navigation.loaderId && after.url===fixtureUrl) return {fixture:true}
+          if (ready && after.id===navigation.frameId && after.loaderId===navigation.loaderId && after.url===fixtureUrl) {fixtureOpened=true;return {fixture:true}}
         }
         await new Promise(resolve=>setTimeout(resolve,25))
       }
@@ -196,6 +208,15 @@ async function execute(request) {
     }
     case 'screenshot': { const r = await call('Page.captureScreenshot', { format: 'png' }); return { mime: 'image/png', base64: r.data } }
     case 'diagnostics': return { events: events.slice() }
+    case 'live_start':
+      if (!liveMode || !fixtureOpened) fail('live 需要已打开的固定测试页')
+      return await livePanel.start(request)
+    case 'live_stop':
+      if (!liveMode) fail('不支持的操作')
+      return await livePanel.stop(request)
+    case 'live_input':
+      if (!liveMode) fail('不支持的操作')
+      return await livePanel.input(request)
     case 'close': return await close()
     default: fail('不支持的操作')
   }
@@ -203,6 +224,7 @@ async function execute(request) {
 function close() {
   if (closePromise) return closePromise
   closed = true
+  livePanel.deactivate()
   for (const p of pending.values()) { clearTimeout(p.timer); p.reject(new Error('浏览器已关闭')) }
   pending.clear()
   closePromise = cleanupOwnedResources({
@@ -219,7 +241,7 @@ function close() {
 }
 let queue = Promise.resolve()
 try {
-  if (process.argv.length > 2 && !isolatedMode) throw new Error('不支持的启动参数')
+  if (!validArgs) throw new Error('不支持的启动参数')
   await start()
   checkCancelled()
   // Enforce the byte limit before readline buffers a line, including input with no newline.

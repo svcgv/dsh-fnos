@@ -24,6 +24,9 @@ test('offline worker: actions, diagnostics, screenshot, network denial and clean
   try {
     const port = server.address().port
     await assert.rejects(call('open_test_site'), /不支持/)
+    await assert.rejects(call('live_start'), /固定测试页/)
+    await assert.rejects(call('live_input', {kind:'text',text:'test'}), /不支持/)
+    await assert.rejects(call('live_stop'), /不支持/)
     const html = `<input aria-label="name"><button onclick="console.error('secret log');fetch('http://127.0.0.1:${port}/secret').catch(()=>{})">Send</button>`
     assert.deepEqual(await call('open', {html}), {offline:true})
     const snap = await call('snapshot'); assert.equal(snap.elements.length, 2)

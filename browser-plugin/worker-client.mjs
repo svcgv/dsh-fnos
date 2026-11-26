@@ -8,6 +8,8 @@ const WORKER = fileURLToPath(new URL('../browser-worker/worker.mjs', import.meta
 const LIMIT = 20 * 1024 * 1024
 const FILESYSTEM_ISOLATION = '--experimental-filesystem-isolation'
 const FIXTURE_ISOLATION = '--experimental-private-http-fixture'
+// Screencast plus input injection; only valid together with the fixed fixture.
+const LIVE_PANEL = '--experimental-live-panel'
 // The worker never inherits the Host environment. The acceptance instance's
 // supervisor sets a private 0700 TMPDIR; passing only that one variable keeps
 // fixture temp roots (and any retained failure residue) inside the retained
@@ -15,9 +17,13 @@ const FIXTURE_ISOLATION = '--experimental-private-http-fixture'
 const BASE_ENV = Object.freeze({ PATH: '/usr/bin:/bin', LANG: 'C.UTF-8', LD_LIBRARY_PATH: '/var/apps/dsh-fnos/target/runtime/lib' })
 
 /** Exactly one mode switch, chosen by trusted host environment, never by tool input. */
-export function workerArgs(acceptanceFixture = false) {
+export function workerArgs(acceptanceFixture = false, livePanel = false) {
   if (typeof acceptanceFixture !== 'boolean') throw new Error('无效的验收固定页模式配置')
-  return [WORKER, acceptanceFixture ? FIXTURE_ISOLATION : FILESYSTEM_ISOLATION]
+  if (typeof livePanel !== 'boolean') throw new Error('无效的可见面板模式配置')
+  if (livePanel && !acceptanceFixture) throw new Error('可见面板模式必须与固定测试页模式同时启用')
+  const args = [WORKER, acceptanceFixture ? FIXTURE_ISOLATION : FILESYSTEM_ISOLATION]
+  if (livePanel) args.push(LIVE_PANEL)
+  return args
 }
 
 /** The only parent variable a fixture worker may inherit: a validated private tmp root. */
@@ -36,16 +42,16 @@ export function startWorker(options = {}) {
 }
 
 // spawnImpl is a test seam, never exposed as an agent tool input.
-export function launchWorker(spawnImpl, { acceptanceFixture = false } = {}) {
-  const child = spawnImpl(process.execPath, workerArgs(acceptanceFixture), {
+export function launchWorker(spawnImpl, { acceptanceFixture = false, livePanel = false, onEvent } = {}) {
+  const child = spawnImpl(process.execPath, workerArgs(acceptanceFixture, livePanel), {
     stdio: ['pipe', 'pipe', 'ignore'],
     env: workerEnv(acceptanceFixture),
   })
-  return createWorkerClient(child)
+  return createWorkerClient(child, { onEvent })
 }
 
 // Exported for transport tests; callers cannot select a process through a tool argument.
-export function createWorkerClient(child, { onCleanupError = () => process.emitWarning('离线浏览器清理失败，无法保证子进程已退出') } = {}) {
+export function createWorkerClient(child, { onCleanupError = () => process.emitWarning('离线浏览器清理失败，无法保证子进程已退出'), onEvent = () => {} } = {}) {
   let sequence = 0
   let buffer = ''
   const decoder = new StringDecoder('utf8')
@@ -88,6 +94,11 @@ export function createWorkerClient(child, { onCleanupError = () => process.emitW
       buffer = buffer.slice(newline + 1)
       let reply
       try { reply = JSON.parse(line) } catch { scheduleStop(); return }
+      // Event lines (screencast frames) carry no id and never satisfy a request.
+      if (reply !== null && typeof reply === 'object' && Object.hasOwn(reply, 'event')) {
+        try { onEvent(reply) } catch { scheduleStop(); return }
+        continue
+      }
       const waiter = waiting.get(reply?.id)
       if (!waiter) { scheduleStop(); return }
       waiting.delete(reply.id)

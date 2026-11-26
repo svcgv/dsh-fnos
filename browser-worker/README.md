@@ -23,6 +23,22 @@
 
 这些检查只针对启动瞬间及指定程序，不是对全部 Chromium 后代、瞬时 FD、同 UID 对抗者、浏览器漏洞或信号异常退出的形式化证明。正常关闭和 SIGTERM/SIGINT 尽力终止自有进程组，若无法确认该组消失则报告失败并保留临时目录；不能确认已脱组的后代，SIGKILL/崩溃不保证回收。固定依赖包含 x86 Chromium、Node 26、`unshare`、`mount`、`lsns`、`ip`、`setpriv` 和 `libcap-ng`；ARM、FPK 打包及其他宿主均未验证。仅本机的受控测试可执行 `DSH_FNOS_FIXTURE_WORKER_TEST=1 node --test --test-concurrency=1 browser-worker/fixture-http.test.mjs`。研究过程和局限见 `HTTP-EXPERIMENT.md`。
 
+## 实验性固定 fixture live panel（默认关闭）
+
+仅管理员临时验收可用，必须同时传入 `--experimental-private-http-fixture --experimental-live-panel`；单独传 live、重复参数、未知参数或其他组合均拒绝，不回退。先调用 `open_test_site`，再调用 `live_start`；不开放其他站点、HTML、URL 或脚本入口。live 模式不会改变上述文件系统、网络、用户与进程隔离边界，也不是多租户安全功能。
+
+`{id,op:"live_start",quality?,maxWidth?,maxHeight?}`：可选 quality 为整数 1–80（默认 60）、maxWidth 为 64–1280（默认 1280）、maxHeight 为 64–800（默认 800）；返回 `{started:true,viewportWidth:1280,viewportHeight:800,maxWidth,maxHeight,quality}`。worker 使用固定 1280×800 CSS viewport 和 CDP JPEG screencast。异步帧为独立 stdout JSON 行 `{event:"frame",seq,data,width,height}`，`data` 是 JPEG base64，`width/height` 是 JPEG 实际像素而非 viewport 大小，seq 从 1 单调递增且重启流不归零。非响应事件没有 id；调用方必须分别处理事件和带 id 的响应。帧中不附带 URL、诊断或浏览器元数据，但**画面像素本身可能包含用户输入的敏感信息**，不可宣称像素已脱敏，也不应记录、持久化或向未授权方发送。输出事件不包含音频。
+
+每个活动流期间收到的正常 CDP 帧由 worker 自动 ACK（协议无需也不支持 `live_ack`）；stdout 同时最多一个帧写入在途，慢消费者丢弃后续帧，正常输出间隔至少 100 ms，JPEG 数据解码前限 1 MiB，CDP ACK 在途上限 4。ACK 积压、失败或流输出失败时停流并发 `{event:"live_error",error:"live stream failed"}`。停止请求 `{id,op:"live_stop"}` 返回 `{stopped:true}`；该响应之后，以及启动之前、停止和关闭之后不再发送帧。关闭仍须检查下文 `close` 中的进程组清理结果。用户自己终止 worker/Harness 的 SIGKILL 会使流断开且不能保证资源回收。
+
+`{id,op:"live_input",kind,...}` 只接受已启动流，其余未知字段拒绝；成功返回 `{accepted:true}`：
+
+- `kind:"mouse"`：必填 `type`（`mouseMoved`、`mousePressed`、`mouseReleased`、`mouseWheel`）、有限数字 `x,y`（各须在 -100000..100000；再夹到 viewport 的 x=0..1279、y=0..799）。坐标单位是 CSS 像素、原点左上；UI 应根据实际帧的显示比例转换。可选 `button` 为 `none|left|middle|right|back|forward`，按下/抬起必须给出非 `none` 的 button；可选 `clickCount` 为整数 0..3，`modifiers` 为整数 0..15。wheel 必须给有限数字 `deltaX,deltaY`、各在 -1200..1200；分别为水平和垂直增量，正数向右/向下，其他类型不得带 delta。
+- `kind:"key"`：必填 `type:"keyDown"|"keyUp"` 和非空 `key`（UTF-8 不超过 64 字节）；可选 `code`（不超过 64 字节）、`windowsVirtualKeyCode` 和 `nativeVirtualKeyCode`（各整数 0..65535）、`text` 和 `unmodifiedText`（各不超过 256 字节）、`modifiers`（整数 0..15）。字符串不得含 NUL；字段原样传给 CDP。`keyDown` 带 text 可能输入字符，`keyUp` 文本行为由 Chromium 决定；避免同时用 keyDown 文本和 insertText 导致重复。
+- `kind:"text"`：必填非空 `text`，UTF-8 不超过 4096 字节且不得含 NUL，映射 `Input.insertText`。modifiers 位掩码为 Alt=1、Ctrl=2、Meta=4、Shift=8，可按位组合。
+
+单测默认不启动实时 Chromium；可在已具备本机隔离依赖且安装 `/usr/bin/ffmpeg` 的自有测试机上显式运行 `DSH_FNOS_LIVE_PANEL_TEST=1 node --unhandled-rejections=strict --test --test-concurrency=1 browser-worker/live-panel.test.mjs`。测试检查 JPEG 实际解码、固定页输入、停止后不发帧及关闭组确认；慢消费者由 mock 覆盖，尚未验证真实慢消费者压力、多客户端及 WebSocket 端到端。首版画面只用于固定 fixture。
+
 ## 接口
 
 Node.js 26 运行 `node browser-worker/worker.mjs`；输入输出均为一行一个 JSON。启动错误输出到 stderr 并非零退出。每个请求含 `id`（由调用者提供）与 `op`；响应为 `{ "id": ..., "result": ... }` 或 `{ "id": ..., "error": "..." }`。操作按输入顺序执行。请求行上限为 128 KiB，超限（即使尚无换行符）会报错并终止 worker。截图以 base64 内联返回，禁止记录或传播其内容。

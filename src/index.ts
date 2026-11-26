@@ -1,6 +1,6 @@
 import { createServer } from 'node:http'
 import { chmod, unlink } from 'node:fs/promises'
-import { dirname } from 'node:path'
+import { dirname, join } from 'node:path'
 import { readBrowserAcceptanceOptIn } from './browser-acceptance-optin.ts'
 import { loadConfig } from './config.ts'
 import { ExperimentalBrowserAcceptance } from './experimental-browser-harness.ts'
@@ -16,12 +16,18 @@ const config = loadConfig(process.env, process.cwd())
 await Promise.all([ensureDir(config.pkgHome), ensureDir(config.pkgVar), ensureDir(config.pkgEtc)])
 
 const store = new WorkspaceStore({ homeRoot: config.pkgHome })
-const harness = new HarnessManager(config, store, logger)
 
-// The experimental browser acceptance window stays off unless an administrator
-// created the marker files in the app data directory. It is a manual acceptance
-// aid for one trusted administrator, never a tenant boundary.
+// The experimental browser features stay off unless an administrator created the
+// marker files in the app data directory. They are a manual acceptance aid for
+// one trusted administrator, never a tenant boundary.
 const optIn = await readBrowserAcceptanceOptIn(config.pkgVar)
+const harness = new HarnessManager(config, store, logger, optIn.enabled
+  ? {
+      uid: optIn.uid,
+      patch: join(config.appDest, 'harness', 'browser-plugin', 'live.patch.yml'),
+      env: { DSH_FNOS_BROWSER_LIVE: '1', DSH_FNOS_ACCEPTANCE_FIXTURE: '1' },
+    }
+  : undefined)
 let acceptance: ExperimentalBrowserAcceptance | undefined
 if (optIn.enabled) {
   process.env.DSH_FNOS_BROWSER_ACCEPTANCE = '1'
@@ -31,7 +37,7 @@ if (optIn.enabled) {
     enabled: true,
     uid: optIn.uid,
   })
-  logger.info('browser-acceptance-enabled', { uid: optIn.uid })
+  logger.info('browser-acceptance-enabled', { uid: optIn.uid, livePanel: true })
 } else if (optIn.reason !== 'not-configured') {
   logger.warn('browser-acceptance-disabled', { reason: optIn.reason })
 }

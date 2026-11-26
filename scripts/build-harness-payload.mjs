@@ -62,7 +62,13 @@ const nativePackages = (nodeArch) => [
 const payloadExtensions = [
   join('browser-plugin', 'index.mjs'),
   join('browser-plugin', 'acceptance.patch.yml'),
+  join('browser-plugin', 'live.mjs'),
+  join('browser-plugin', 'live-ws.mjs'),
+  join('browser-plugin', 'live.patch.yml'),
+  join('browser-plugin', 'panel', 'panel.js'),
+  join('browser-plugin', 'panel', 'panel.css'),
   join('browser-worker', 'worker.mjs'),
+  join('browser-worker', 'live-panel.mjs'),
 ]
 
 /** Validate that a Harness payload is complete and was built for the target architecture. */
@@ -98,7 +104,7 @@ async function copyBrowserExtensions(dest) {
       recursive: true,
       filter: (path) => {
         const file = basename(path)
-        if (file === 'node_modules' || file.endsWith('.test.mjs') || file === 'README.md' || file === 'HTTP-EXPERIMENT.md') return false
+        if (file === 'node_modules' || file.endsWith('.test.mjs') || file === 'README.md' || file === 'HTTP-EXPERIMENT.md' || file === 'mock-ws.mjs') return false
         return true
       },
     })

@@ -1,0 +1,10 @@
+# fixed-private-fixture-reviewed-v1
+# EXPERIMENTAL: visible browser panel in the normal workspace GUI.
+# Never enable on a shared or untrusted profile: the panel drives a real headless
+# Chromium and lets both the signed-in user and the Agent operate one page.
+# Requires the private fixed-page worker environment switches; the panel can only
+# open the built-in test page, never a caller-supplied URL or HTML.
+- insert:
+    - id: dsh-fnos-browser-live
+      name: './live.mjs'
+      disabled: !!js "process.env.DSH_FNOS_BROWSER_LIVE !== '1' || process.env.DSH_FNOS_ACCEPTANCE_FIXTURE !== '1'"
