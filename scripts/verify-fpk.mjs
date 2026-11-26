@@ -3,6 +3,7 @@ import { existsSync } from 'node:fs'
 import { mkdir, mkdtemp, readFile, rm, stat } from 'node:fs/promises'
 import { join } from 'node:path'
 import { spawnSync } from 'node:child_process'
+import { tmpdir } from 'node:os'
 import { pathToFileURL } from 'node:url'
 import { root } from './build.mjs'
 import {
@@ -44,9 +45,10 @@ export async function verifyFpk(file, arch) {
   const config = await loadReleaseConfig()
   const packageJson = JSON.parse(await readFile(join(root, 'package.json'), 'utf8'))
   const target = architectureSpec(arch)
-  const tempRoot = join(root, '.local', 'tmp')
-  await mkdir(tempRoot, { recursive: true })
-  const work = await mkdtemp(join(tempRoot, 'verify-'))
+  // Extracting inside the repository can hit ACL/filesystem quirks (fnOS
+  // `trimacl` reports zero modes for freshly extracted trees) and misreport a
+  // valid FPK as broken. Use the host temp dir instead.
+  const work = await mkdtemp(join(tmpdir(), 'dsh-fpk-verify-'))
   try {
     runChecked('tar', ['-xzf', file, '-C', work])
     const manifest = await readFile(join(work, 'manifest'), 'utf8')

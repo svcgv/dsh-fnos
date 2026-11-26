@@ -62,20 +62,23 @@ test('real Cordis applies isolated acceptance overlay and fixed scripted model',
     import { boot, loadOverlayPatches } from '@deepseek-ai/dsh-app-boot'
     import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
     import Tools from '@deepseek-ai/dsh-tools'
+    import * as NativeExecutor from '@deepseek-ai/dsh-tool-executor-native'
     import Sessions from '@deepseek-ai/dsh-session'
     import Projections from '@deepseek-ai/dsh-session-projection'
     import Agents from '@deepseek-ai/dsh-agent'
-    import Llm from '@deepseek-ai/dsh-llm'
+    import Llm, { createUserMessage } from '@deepseek-ai/dsh-llm'
     import Loop from '@deepseek-ai/dsh-agent-loop'
     const ctx = await boot('acceptance-test', process.cwd() + '/root.yml', loadOverlayPatches('acceptance-test', process.cwd() + '/plugin/acceptance.patch.yml'), async ctx => {
-      for (const [p,c] of [[SystemPrompt,{}],[Tools,{}],[Sessions,{}],[Projections,{}],[Agents,{}],[Llm,{}],[Loop,{}]]) await ctx.plugin(p,c)
+      for (const [p,c] of [[SystemPrompt,{}],[Tools,{}],[NativeExecutor,{}],[Sessions,{}],[Projections,{}],[Agents,{}],[Llm,{}],[Loop,{}]]) await ctx.plugin(p,c)
     })
     let agent
     try {
       assert.equal(ctx.get('sessionPersistence'),undefined)
       assert(ctx.llm.listProviders().some(x=>x.id==='acceptance-offline'))
       assert((await ctx.llm.listModels('acceptance-offline')).some(x=>x.id==='fixture-v1'))
-      agent=await ctx.agents.create({sessionId:'acceptance-test-agent'})
+      const events=[]
+      ctx.on('session/event',(_session,event)=>events.push(event))
+      agent=await ctx.agents.create({sessionId:'acceptance-test-agent',agentOptions:{provider:'acceptance-offline',model:'fixture-v1'}})
       const browser=ctx.tools.get('browser_offline_prototype',agent.agent)
       assert(browser)
       assert.deepEqual(browser.parameters.properties.action.enum,['open_test_site'])
@@ -83,7 +86,12 @@ test('real Cordis applies isolated acceptance overlay and fixed scripted model',
       if(process.env.DSH_FNOS_TEST_REAL_FIXTURE === '1') {
         const response=await browser.execute({action:'open_test_site'},{agent:agent.agent,signal:new AbortController().signal})
         assert.equal(response.content[0].text,'{"fixture":true}')
-        console.log('real agent fixture tool returned {"fixture":true}')
+        agent.agent.followup(createUserMessage({source:{kind:'user'},content:[{type:'text',text:'开始验收'}]}))
+        await agent.agent.whenIdle()
+        const log=JSON.stringify(events)
+        assert(log.includes('open_test_site'),'agent loop must emit fixed tool call: '+log)
+        assert(log.includes('内置验收固定页已打开'),'agent loop must report fixed-page result: '+log)
+        console.log('real agent fixture tool returned {"fixture":true} and scripted agent loop completed')
       }
       const { OfflineAcceptanceAdapter } = await import('./plugin/acceptance-model.mjs')
       const adapter = new OfflineAcceptanceAdapter()

@@ -331,13 +331,25 @@ function tokenFromOutput(child: AcceptanceChild, port: number, signal: AbortSign
     if (signal.aborted) cancelled()
   })
 }
+async function directLoopback(url: string, signal: AbortSignal, cookie?: string): Promise<{ status: number; cookies: string[] }> {
+  const address = new URL(url)
+  if (address.protocol !== 'http:' || address.hostname !== '127.0.0.1' || !address.port) throw new Error('invalid acceptance loopback address')
+  // Use a dedicated direct HTTP connection, never global fetch/proxy settings.
+  return new Promise((resolvePromise, reject) => {
+    const req = httpGet(address, { agent: false, signal, ...(cookie === undefined ? {} : { headers: { cookie } }) }, response => {
+      response.resume()
+      response.once('end', () => resolvePromise({ status: response.statusCode ?? 0, cookies: response.headers['set-cookie'] ?? [] }))
+      response.once('error', () => reject(new Error('acceptance loopback response failed')))
+    })
+    req.once('error', () => reject(new Error('acceptance loopback request failed')))
+  })
+}
 async function acceptanceCookie(url: string, signal: AbortSignal): Promise<string> {
-  let response: Response
-  try { response = await fetch(url, { redirect: 'manual', signal }) }
-  catch (error) { const cause = error instanceof Error ? error.cause as NodeJS.ErrnoException | undefined : undefined; throw new Error(`acceptance token exchange failed (${cause?.code ?? 'unknown'})`) }
-  const cookies = response.headers.getSetCookie()
-  if (cookies.length === 0) throw new Error(`acceptance token exchange returned no cookie (status ${response.status})`)
-  return cookies.map(cookie => cookie.split(';', 1)[0]).join('; ')
+  let response: Awaited<ReturnType<typeof directLoopback>>
+  try { response = await directLoopback(url, signal) }
+  catch { throw new Error('acceptance token exchange failed') }
+  if (response.cookies.length === 0) throw new Error(`acceptance token exchange returned no cookie (status ${response.status})`)
+  return response.cookies.map(cookie => cookie.split(';', 1)[0]).join('; ')
 }
 
 /** Single per-process acceptance lease, wired only by an explicitly opted-in host. */
@@ -431,11 +443,11 @@ export class ExperimentalBrowserAcceptance {
       const tokenUrl = await tokenFromOutput(child, port, signal)
       throwIfAborted(signal)
       const cookie = await acceptanceCookie(tokenUrl, signal)
-      let ready: Response
-      try { ready = await fetch(`http://127.0.0.1:${port}/`, { headers: { cookie }, redirect: 'manual', signal }) }
+      let ready: Awaited<ReturnType<typeof directLoopback>>
+      try { ready = await directLoopback(`http://127.0.0.1:${port}/`, signal, cookie) }
       catch { throw new Error('acceptance authenticated readiness failed') }
       if (ready.status !== 200) throw new Error('acceptance authenticated readiness failed')
-      await ready.arrayBuffer(); throwIfAborted(signal)
+      throwIfAborted(signal)
       entry.tokenUrl = tokenUrl; entry.cookie = cookie; entry.state = 'ready'
       await acceptanceManifest(entry, 'ready')
       const manager = this
