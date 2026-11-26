@@ -1,0 +1,86 @@
+scripts/build-harness-payload.mjs
+  s_b20c3c760f01fe::t_522e3f79f7ca59 72
+test/harness-browser-live.test.ts
+  s_b20c3c760f01fe::t_522e3f79f7ca59 53,73,89,113
+  s_b20c3c760f01fe::t_baee92202f08be 74
+browser-plugin/panel/panel.css
+  s_b20c3c760f01fe::t_480c92a33c7035 327-421
+browser-worker/worker.mjs
+  s_b20c3c760f01fe::t_fbf16a564a1b1c 29,72-74,172,177-179
+  s_b20c3c760f01fe::t_65ba7cc0f638e6 227
+  s_b20c3c760f01fe::t_522e3f79f7ca59 16,24,26-27,71,142,176,229
+  s_b20c3c760f01fe::t_1888abffbdf477 76-91,175,226,228,230-250,266
+browser-plugin/live.test.mjs
+  s_b20c3c760f01fe::t_6dc43795ac5c9d 3,136-160,162-170,172-189
+  s_b20c3c760f01fe::t_522e3f79f7ca59 58,66-67,122,135,161
+  s_b20c3c760f01fe::t_3c90587cf7577a 121,123-134,171
+  s_b20c3c760f01fe::t_e04458b60eea5b 190
+packaging/fpk/manifest
+  s_b20c3c760f01fe::t_158d6602847e87 21
+  s_b20c3c760f01fe::t_5a4074856adfd8 2
+browser-plugin/live.mjs
+  s_b20c3c760f01fe::t_522e3f79f7ca59 24,46-48,145,159,164,176-177,187,222,313-314,543
+  s_b20c3c760f01fe::t_f3a23178c76288 472-473,476,500,512-513,516,544,547
+  s_b20c3c760f01fe::t_65ba7cc0f638e6 15,23,156,165,368,372,417
+  s_b20c3c760f01fe::t_6dc43795ac5c9d 207
+  s_b20c3c760f01fe::t_21479f547a155d 213,215-216,218,221,224,226-233,238-253,255,257-258,264-270,272,290-298,315-316,319,347-348,351,359,369-371,373-409,412-416,418-434,452-454
+  s_b20c3c760f01fe::t_dfb17b513ccd3f 6-10,21,39-45,49,52,144,148,155,157-158,160-163,166-171,175,178
+test/fixtures/capture-harness.mjs
+  s_b20c3c760f01fe::t_522e3f79f7ca59 19
+browser-plugin/live.patch.yml
+  s_b20c3c760f01fe::t_522e3f79f7ca59 10
+  s_b20c3c760f01fe::t_30dc463c4902a7 1,5-6
+src/index.ts
+  s_b20c3c760f01fe::t_522e3f79f7ca59 28
+browser-worker/browser-url.mjs
+  s_b20c3c760f01fe::t_d0a910981a738d 1-52
+browser-plugin/panel/panel.js
+  s_b20c3c760f01fe::t_65ba7cc0f638e6 344,748,750-754
+  s_b20c3c760f01fe::t_85a00ae2ef6b24 88,252-286,340-343,382-384,467-468,473,566,731-737,746-747,749,755-786,1202-1204,1214-1215,1219,1339-1340
+  s_b20c3c760f01fe::t_15cbbad283bd0d 787,1179-1192,1211,1221-1223,1345
+  s_b20c3c760f01fe::t_a777b67ff771d5 788
+browser-plugin/worker-client.test.mjs
+  s_b20c3c760f01fe::t_522e3f79f7ca59 65-66,121
+  s_b20c3c760f01fe::t_3c90587cf7577a 113,115
+  s_b20c3c760f01fe::t_0f752018d4773f 67-68,105,114,116,119
+docs/browser-acceptance.md
+  s_b20c3c760f01fe::t_3cc44fc62cbb2d 3,5,8,12,14-15,17-18,20-21,23,25,28-31,33,37-43,46-49,52-55,57-59,64-75,83,88-91
+  s_b20c3c760f01fe::t_158d6602847e87 19
+  s_b20c3c760f01fe::t_30dc463c4902a7 1,7,10,16,26-27,35-36,56,60-63,87
+package.json
+  s_b20c3c760f01fe::t_5a4074856adfd8 3
+browser-plugin/worker-client.mjs
+  s_b20c3c760f01fe::t_522e3f79f7ca59 11,21,24-27,33,35-36,49-50,52
+  s_b20c3c760f01fe::t_30dc463c4902a7 12
+  s_b20c3c760f01fe::t_ca9c1e8a34ef61 32,39
+browser-plugin/live.real.test.mjs
+  s_b20c3c760f01fe::t_30dc463c4902a7 255
+  s_b20c3c760f01fe::t_522e3f79f7ca59 256
+browser-worker/isolation.mjs
+  s_b20c3c760f01fe::t_522e3f79f7ca59 87,107,118-120,133,166,181,183-185
+  s_b20c3c760f01fe::t_d4cbb5745b9ec8 108-117,121-132,134-136,140,151,156-157
+  s_b20c3c760f01fe::t_65ba7cc0f638e6 167-168
+  s_b20c3c760f01fe::t_fbf16a564a1b1c 86,88-89
+browser-plugin/README.md
+  s_b20c3c760f01fe::t_56020b72e31a12 1-8
+browser-plugin/panel/README.md
+  s_b20c3c760f01fe::t_501f3abb10f576 64,102-103,111,114,116-117
+package-lock.json
+  s_b20c3c760f01fe::t_128f8a7e19ca5b 3,9
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "9de69c3145d86abd750691887d97a4f592998659",
+  "prompts": {},
+  "sessions": {
+    "s_b20c3c760f01fe": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a215f7-5658-7622-8324-769d9b5110d4",
+        "model": "deepseek-v4.1-flash"
+      },
+      "human_author": "svcgv <hb1230123@hotmail.com>"
+    }
+  }
+}
