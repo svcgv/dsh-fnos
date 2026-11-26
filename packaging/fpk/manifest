@@ -1,5 +1,5 @@
 appname               = dsh-fnos
-version               = 0.2.8
+version               = 0.2.9
 display_name          = DeepSeek Harness
 desc                  = 原生运行的 DeepSeek Harness，每个飞牛用户一个独立工作区，通过飞牛统一网关登录。
 source                = thirdparty
@@ -18,5 +18,5 @@ ctl_stop              = true
 checkport             = false
 disable_authorization_path = false
 
-changelog             = 0.2.8：浏览器支持本机和局域网 HTTP/HTTPS 导航，每次访问授权，并修复聊天输入被面板截获。
+changelog             = 0.2.9：发布受控浏览器网络访问，支持本机、局域网和公网 HTTP/HTTPS，逐次授权并修复输入焦点。
 install_dep_apps      = nodejs_v26

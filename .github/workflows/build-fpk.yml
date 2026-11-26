@@ -75,3 +75,38 @@ jobs:
         run: node scripts/verify-fpk.mjs --file dist/dsh-fnos-*-linux-amd64.fpk --arch amd64
       - name: Verify downloaded arm64 artifact
         run: node scripts/verify-fpk.mjs --file dist/dsh-fnos-*-linux-arm64.fpk --arch arm64
+
+  release:
+    name: create-release
+    needs: collect
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: dsh-fnos-*
+          path: dist
+          merge-multiple: true
+      - name: Create checksums
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd dist
+          for file in dsh-fnos-*-linux-*.fpk; do
+            sha256sum "$file" > "$file.sha256"
+          done
+          ls -lh
+      - name: Create GitHub Release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh release create "$GITHUB_REF_NAME" \
+            dist/dsh-fnos-*-linux-*.fpk \
+            dist/dsh-fnos-*-linux-*.fpk.sha256 \
+            --verify-tag \
+            --title "dsh-fnos ${GITHUB_REF_NAME#v}" \
+            --generate-notes
