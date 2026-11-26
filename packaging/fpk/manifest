@@ -1,5 +1,5 @@
 appname               = dsh-fnos
-version               = 0.2.3
+version               = 0.2.4
 display_name          = DeepSeek Harness
 desc                  = 原生运行的 DeepSeek Harness，每个飞牛用户一个独立工作区，通过飞牛统一网关登录。
 source                = thirdparty
@@ -18,5 +18,5 @@ ctl_stop              = true
 checkport             = false
 disable_authorization_path = false
 
-changelog             = 0.2.3：新增默认关闭的管理员内置测试页浏览器验收窗口，并修复 fnOS 文件系统下的打包问题。
+changelog             = 0.2.4：新增默认关闭的 Web GUI 可见浏览器面板，管理员与 Agent 可同时操作同一个内置测试页。
 install_dep_apps      = nodejs_v26
