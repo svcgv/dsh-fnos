@@ -16,6 +16,7 @@ if (process.env.CAPTURE_ENV !== undefined) {
   await writeFile(process.env.CAPTURE_ENV, JSON.stringify({
     DSH_FNOS_BROWSER_LIVE: process.env.DSH_FNOS_BROWSER_LIVE ?? null,
     DSH_FNOS_ACCEPTANCE_FIXTURE: process.env.DSH_FNOS_ACCEPTANCE_FIXTURE ?? null,
+    DSH_FNOS_WORKSPACE_DOCUMENTS: process.env.DSH_FNOS_WORKSPACE_DOCUMENTS ?? null,
     TMPDIR: process.env.TMPDIR ?? null,
   }))
 }

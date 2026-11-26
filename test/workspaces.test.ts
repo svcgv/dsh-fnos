@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { access, mkdir, mkdtemp, readFile, readdir, rename, stat, writeFile } from 'node:fs/promises'
+import { access, mkdir, mkdtemp, readFile, readdir, realpath, rename, stat, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
@@ -45,11 +45,28 @@ test('creates one empty workspace for a new user', async () => {
   for (const directory of [paths.workspace, paths.dshHome, paths.agentsHome, paths.home, paths.tmp]) {
     assert.equal((await stat(directory)).isDirectory(), true)
   }
+  assert.equal(
+    await realpath(join(paths.root, 'deepseek-harness', 'default-workspace')),
+    await realpath(paths.workspace),
+  )
   const marker = JSON.parse(await readFile(join(paths.root, 'instance.json'), 'utf8')) as Record<string, unknown>
   assert.equal(marker.version, 1)
   assert.equal(marker.ownerUid, '1000')
   assert.equal(marker.name, '默认工作区')
   assert.deepEqual(await readdir(join(uidRoot, 'harness', 'workspace')), [])
+})
+
+test('rejects a default workspace alias that escapes the fixed workspace', async () => {
+  const { store, uidRoot } = await createStore()
+  const paths = store.paths('1000')
+  const outside = join(uidRoot, 'outside')
+  const alias = join(paths.root, 'deepseek-harness', 'default-workspace')
+  await Promise.all([
+    mkdir(join(paths.root, 'deepseek-harness'), { recursive: true }),
+    mkdir(outside, { recursive: true }),
+  ])
+  await symlink(outside, alias, 'dir')
+  await assert.rejects(() => store.ensure('1000'), /outside the fixed workspace/u)
 })
 
 test('migrates the newest legacy project and preserves older projects', async () => {

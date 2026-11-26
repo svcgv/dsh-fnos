@@ -41,8 +41,10 @@ async function createManager(options: { withOverlay?: boolean } = {}): Promise<{
   const logger = createLogger({ test: 'harness-browser-live' })
   const store = new WorkspaceStore({ homeRoot: pkgHome })
   const patch = join(appDest, 'harness', 'browser-plugin', 'live.patch.yml')
+  const workspacePatch = join(appDest, 'harness', 'workspace.patch.yml')
+  await mkdir(join(appDest, 'harness', 'browser-plugin'), { recursive: true })
+  await writeFile(workspacePatch, '# fixed workspace overlay\n')
   if (options.withOverlay !== false) {
-    await mkdir(join(appDest, 'harness', 'browser-plugin'), { recursive: true })
     await writeFile(patch, '# test overlay\n')
   }
   const manager = new HarnessManager(config, store, logger, {
@@ -62,12 +64,14 @@ test('only the opted-in uid receives the browser panel overlay and switches', { 
     process.env.CAPTURE_ENV = env1000
     await manager.ensure('1000', await store.ensure('1000'))
     const allowed = JSON.parse(await readFile(argv1000, 'utf8')) as string[]
-    const patchIndex = allowed.indexOf('--patch')
-    assert.notEqual(patchIndex, -1, 'opted-in uid must receive --patch')
-    assert.equal(allowed[patchIndex + 1], join(root, 'app', 'harness', 'browser-plugin', 'live.patch.yml'))
+    const workspacePatch = join(root, 'app', 'harness', 'workspace.patch.yml')
+    const browserPatch = join(root, 'app', 'harness', 'browser-plugin', 'live.patch.yml')
+    assert.deepEqual(allowed.slice(2, 6), ['--patch', workspacePatch, '--patch', browserPatch])
+    assert.ok(allowed.lastIndexOf('--patch') < allowed.indexOf('--no-open'), 'launcher-owned --patch must precede web app flags')
     assert.deepEqual(JSON.parse(await readFile(env1000, 'utf8')), {
       DSH_FNOS_BROWSER_LIVE: '1',
       DSH_FNOS_ACCEPTANCE_FIXTURE: '1',
+      DSH_FNOS_WORKSPACE_DOCUMENTS: join(root, 'home', 'users', '1000', 'harness'),
       TMPDIR: join(root, 'home', 'users', '1000', 'harness', 'tmp'),
     })
 
@@ -76,10 +80,13 @@ test('only the opted-in uid receives the browser panel overlay and switches', { 
     process.env.CAPTURE_ARGV = argv2000
     process.env.CAPTURE_ENV = env2000
     await manager.ensure('2000', await store.ensure('2000'))
-    assert.equal(JSON.parse(await readFile(argv2000, 'utf8')).includes('--patch'), false)
+    const normal = JSON.parse(await readFile(argv2000, 'utf8')) as string[]
+    assert.deepEqual(normal.slice(2, 4), ['--patch', workspacePatch])
+    assert.equal(normal.includes(browserPatch), false)
     assert.deepEqual(JSON.parse(await readFile(env2000, 'utf8')), {
       DSH_FNOS_BROWSER_LIVE: null,
       DSH_FNOS_ACCEPTANCE_FIXTURE: null,
+      DSH_FNOS_WORKSPACE_DOCUMENTS: join(root, 'home', 'users', '2000', 'harness'),
       TMPDIR: join(root, 'home', 'users', '2000', 'harness', 'tmp'),
     })
   } finally {
@@ -97,10 +104,12 @@ test('a missing overlay degrades to the normal instance instead of failing start
     process.env.CAPTURE_ARGV = argv
     process.env.CAPTURE_ENV = env
     await manager.ensure('1000', await store.ensure('1000'))
-    assert.equal(JSON.parse(await readFile(argv, 'utf8')).includes('--patch'), false)
+    const normal = JSON.parse(await readFile(argv, 'utf8')) as string[]
+    assert.deepEqual(normal.slice(2, 4), ['--patch', join(root, 'app', 'harness', 'workspace.patch.yml')])
     assert.deepEqual(JSON.parse(await readFile(env, 'utf8')), {
       DSH_FNOS_BROWSER_LIVE: null,
       DSH_FNOS_ACCEPTANCE_FIXTURE: null,
+      DSH_FNOS_WORKSPACE_DOCUMENTS: join(root, 'home', 'users', '1000', 'harness'),
       TMPDIR: join(root, 'home', 'users', '1000', 'harness', 'tmp'),
     })
   } finally {

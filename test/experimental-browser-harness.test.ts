@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { existsSync } from 'node:fs'
-import { access, copyFile, mkdir, mkdtemp, readFile, readdir, rename, rm, symlink, writeFile } from 'node:fs/promises'
+import { access, copyFile, mkdir, mkdtemp, readFile, readdir, realpath, rename, rm, symlink, writeFile } from 'node:fs/promises'
 import { spawnSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -11,7 +11,7 @@ import type { Identity } from '../src/identity.ts'
 const admin: Identity = { uid: '1000', username: 'tester', isAdmin: true }
 
 async function fixture(t: TestContext): Promise<{ root: string; home: string; dest: string }> {
-  const root = await mkdtemp(join(tmpdir(), 'dsh-exp-test-'))
+  const root = await realpath(await mkdtemp(join(tmpdir(), 'dsh-exp-test-')))
   t.after(async () => { await rm(root, { recursive: true, force: true }) })
   const home = join(root, 'app-home'), dest = join(root, 'app-dest')
   await mkdir(home, { mode: 0o700 })

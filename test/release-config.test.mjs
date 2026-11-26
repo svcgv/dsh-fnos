@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import test from 'node:test'
@@ -23,6 +23,12 @@ test('pins Node 26, the nodejs_v26 dependency and both release architectures', a
   assert.match(config.libatomic.sha256.amd64, /^[0-9a-f]{64}$/u)
   assert.match(config.libatomic.sha256.arm64, /^[0-9a-f]{64}$/u)
   assert.deepEqual([...config.architectures], [...REQUIRED_ARCHITECTURES])
+})
+
+test('ships the fixed first-use workspace overlay', async () => {
+  const patch = await readFile(new URL('../harness-patches/workspace.patch.yml', import.meta.url), 'utf8')
+  assert.match(patch, /id: workspace-controller/u)
+  assert.match(patch, /DSH_FNOS_WORKSPACE_DOCUMENTS/u)
 })
 
 test('maps release architectures to fnOS, Node and ELF identities', () => {

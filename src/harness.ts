@@ -202,6 +202,7 @@ export class HarnessManager {
       HOME: paths.home,
       TMPDIR: paths.tmp,
       PWD: paths.workspace,
+      DSH_FNOS_WORKSPACE_DOCUMENTS: paths.root,
     }
   }
 
@@ -228,14 +229,23 @@ export class HarnessManager {
     if (wanted !== undefined && browserLive === undefined) {
       logger.warn('browser-live-overlay-missing', { patch: wanted.patch })
     }
+    const workspacePatch = join(this.config.appDest, 'harness', 'workspace.patch.yml')
+    if (!existsSync(workspacePatch)) logger.warn('workspace-overlay-missing', { patch: workspacePatch })
+    const patches = [
+      ...(existsSync(workspacePatch) ? ['--patch', workspacePatch] : []),
+      ...(browserLive === undefined ? [] : ['--patch', browserLive.patch]),
+    ]
+    // Launcher-owned flags must precede the app CLI arguments. In particular,
+    // --patch is parsed by `dsh`; placing it after --no-open forwards it to the
+    // web app and fails startup with "unknown option '--patch'".
     const args = [
       this.config.harness.entry,
       '--profile',
       this.config.harness.profile,
+      ...patches,
       '--no-open',
       '--port',
       String(port),
-      ...(browserLive === undefined ? [] : ['--patch', browserLive.patch]),
       ...this.config.harness.extraArgs,
     ]
 

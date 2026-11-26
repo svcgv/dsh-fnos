@@ -69,6 +69,7 @@ const payloadExtensions = [
   join('browser-plugin', 'panel', 'panel.css'),
   join('browser-worker', 'worker.mjs'),
   join('browser-worker', 'live-panel.mjs'),
+  join('workspace.patch.yml'),
 ]
 
 /** Validate that a Harness payload is complete and was built for the target architecture. */
@@ -90,6 +91,13 @@ export async function validateHarnessPayload(directory, arch) {
     throw new Error(`Harness payload is missing the fixed-page browser extension: ${missingExtensions.join(', ')}`)
   }
   return marker
+}
+
+/** Copy the fnOS core workspace overlay into a Harness payload. */
+async function copyWorkspacePatch(dest) {
+  const source = join(root, 'harness-patches', 'workspace.patch.yml')
+  if (!existsSync(source)) throw new Error(`workspace overlay source is incomplete: ${source}`)
+  await cp(source, join(dest, 'workspace.patch.yml'))
 }
 
 /** Copy the opt-in browser extension into a Harness payload, without its tests. */
@@ -165,6 +173,7 @@ export async function buildHarnessPayload(options) {
     harnessVersion: version,
   }, undefined, 2)}\n`)
   await copyBrowserExtensions(dest)
+  await copyWorkspacePatch(dest)
 
   // pnpm/npm copy source modes; `trimacl` reports 000 for ACL-managed files.
   await normalizeModes(dest, false)
