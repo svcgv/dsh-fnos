@@ -1,0 +1,47 @@
+src/harness.ts
+  s_b20c3c760f01fe::t_435b1a0c38034b 205,232-237,245
+  s_b20c3c760f01fe::t_4130572ca80e84 238-240
+packaging/fpk/manifest
+  s_b20c3c760f01fe::t_b8e5f4539ee2fa 2,21
+test/fixtures/capture-harness.mjs
+  s_b20c3c760f01fe::t_75f8495510b629 19
+scripts/build-harness-payload.mjs
+  s_b20c3c760f01fe::t_435b1a0c38034b 72,96-102,176
+test/harness-browser-live.test.ts
+  s_b20c3c760f01fe::t_75f8495510b629 44-46,67-70,74,83-85,89,107-108,112
+package.json
+  s_b20c3c760f01fe::t_b8e5f4539ee2fa 3
+test/release-config.test.mjs
+  s_b20c3c760f01fe::t_75f8495510b629 2,28-31
+  s_b20c3c760f01fe::t_cbb997e084c6b6 32-33
+test/workspaces.test.ts
+  s_b20c3c760f01fe::t_622cdf5bf99174 2,59-69
+  s_b20c3c760f01fe::t_75f8495510b629 48-51
+  s_b20c3c760f01fe::t_cf4c570e21802e 70-71
+harness-patches/workspace.patch.yml
+  s_b20c3c760f01fe::t_435b1a0c38034b 1-8
+src/workspaces.ts
+  s_b20c3c760f01fe::t_435b1a0c38034b 1,207,293-301,303,305-307
+  s_b20c3c760f01fe::t_622cdf5bf99174 302,304,308-314
+  s_b20c3c760f01fe::t_bdafa42e9285ea 315-316
+test/experimental-browser-harness.test.ts
+  s_b20c3c760f01fe::t_9c7c2469f37fed 3,14
+package-lock.json
+  s_b20c3c760f01fe::t_6a76bcb7aef40f 3,9
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "b036e276ff8332f132779057f9e69410e6c32904",
+  "prompts": {},
+  "sessions": {
+    "s_b20c3c760f01fe": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a215f7-5658-7622-8324-769d9b5110d4",
+        "model": "deepseek-v4.1-flash"
+      },
+      "human_author": "svcgv <hb1230123@hotmail.com>"
+    }
+  }
+}
