@@ -9,12 +9,36 @@ import { WorkspacePreparationError, type WorkspaceStore } from './workspaces.ts'
 
 const PROXY_METHODS = 'GET, HEAD, POST, PUT, PATCH, DELETE'
 
+/**
+ * One administrator acceptance instance. This is an explicit, opt-in exception
+ * to the single-workspace rule: it never reads or writes the user's workspace,
+ * profile or credentials. Implementations must fail closed when disabled.
+ */
+export interface ExperimentalAcceptanceSession {
+  /** Loopback port of the disposable Harness process. */
+  readonly port: number
+  /** Supervisor-held Harness cookie; never sent to the browser. */
+  readonly cookie: string | undefined
+  /** Re-mint the cookie when the disposable instance rejects a stale one. */
+  reauthenticate(): Promise<string | undefined>
+}
+
+/** Administrator-only disposable instance source; absent when the feature is off. */
+export interface ExperimentalAcceptance {
+  /** Exactly one NAS uid may use the acceptance mount. */
+  readonly uid: string
+  open(identity: Identity, signal?: AbortSignal): Promise<ExperimentalAcceptanceSession>
+  close(identity: Identity): Promise<void>
+}
+
 /** Everything the HTTP layer needs. */
 export interface ServerDeps {
   readonly config: AppConfig
   readonly store: WorkspaceStore
   readonly harness: HarnessManager
   readonly logger: Logger
+  /** Present only when the administrator acceptance experiment is enabled. */
+  readonly acceptance?: ExperimentalAcceptance
 }
 
 interface Route {
@@ -94,6 +118,109 @@ async function openWorkspace(
   }
 }
 
+/** Reserved stop action under the acceptance mount; never proxied upstream. */
+const ACCEPTANCE_STOP = '/_stop'
+
+interface AcceptanceRoute {
+  /** Path after the mount, always starting with '/'; '/' means the mount root. */
+  readonly rest: string
+}
+
+/**
+ * Match the administrator acceptance mount.
+ * The mount is deliberately not listed anywhere unless it is enabled, and the
+ * path is matched after removing the gateway mount prefix.
+ */
+export function matchAcceptance(pathname: string, appName: string): AcceptanceRoute | undefined {
+  const { path } = splitMount(pathname, appName)
+  if (path === '/acceptance' || path === '/acceptance/') return { rest: '/' }
+  if (!path.startsWith('/acceptance/')) return undefined
+  return { rest: path.slice('/acceptance'.length) }
+}
+
+/** Only the configured administrator may use the acceptance mount. */
+function acceptanceCaller(deps: ServerDeps, req: IncomingMessage): Identity | undefined {
+  const acceptance = deps.acceptance
+  if (acceptance === undefined) return undefined
+  const identity = readIdentity(req.headers, deps.config.devUid)
+  if (identity === undefined || !identity.isAdmin || identity.uid !== acceptance.uid) return undefined
+  return identity
+}
+
+function acceptanceTarget(url: URL, appName: string, mountPathRoot: string, route: AcceptanceRoute, session: ExperimentalAcceptanceSession): ProxyTarget {
+  const base = applicationBase(url.pathname, appName)
+  return {
+    port: session.port,
+    cookie: session.cookie,
+    upstreamPath: (route.rest === '/' ? '/' : route.rest) + url.search,
+    mountPath: `${base}${mountPathRoot}`,
+    reauth: () => session.reauthenticate(),
+  }
+}
+
+/** Serve one HTTP request for the disposable acceptance instance. */
+async function serveAcceptance(
+  deps: ServerDeps,
+  req: IncomingMessage,
+  res: ServerResponse,
+  url: URL,
+  route: AcceptanceRoute,
+): Promise<void> {
+  const acceptance = deps.acceptance
+  const identity = acceptanceCaller(deps, req)
+  if (acceptance === undefined || identity === undefined) {
+    // The mount does not exist for anyone else: no 401/403 oracle.
+    sendNotFound(res)
+    return
+  }
+
+  if (route.rest === '/' && !url.pathname.endsWith('/')) {
+    redirect(res, 308, `${url.pathname}/`)
+    return
+  }
+
+  if (!['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method ?? '')) {
+    res.writeHead(405, { allow: PROXY_METHODS })
+    res.end()
+    return
+  }
+
+  if (route.rest === ACCEPTANCE_STOP) {
+    if (req.method !== 'POST') {
+      res.writeHead(405, { allow: 'POST' })
+      res.end()
+      return
+    }
+    await acceptance.close(identity)
+    deps.logger.info('acceptance-stopped', { uid: identity.uid })
+    sendJson(res, 200, { stopped: true })
+    return
+  }
+
+  const session = await acceptance.open(identity)
+  deps.logger.info('acceptance-opened', { uid: identity.uid, port: session.port })
+  proxyHttp(req, res, acceptanceTarget(url, deps.config.appName, '/acceptance', route, session))
+}
+
+/** Serve one WebSocket upgrade for the disposable acceptance instance. */
+async function upgradeAcceptance(
+  deps: ServerDeps,
+  req: IncomingMessage,
+  socket: import('node:stream').Duplex,
+  head: Buffer,
+  url: URL,
+  route: AcceptanceRoute,
+): Promise<void> {
+  const acceptance = deps.acceptance
+  const identity = acceptanceCaller(deps, req)
+  if (acceptance === undefined || identity === undefined) {
+    socket.end('HTTP/1.1 404 Not Found\r\n\r\n')
+    return
+  }
+  const session = await acceptance.open(identity)
+  proxyUpgrade(req, socket, head, acceptanceTarget(url, deps.config.appName, '/acceptance', route, session))
+}
+
 /** Create the HTTP request handler. */
 export function createHandler(deps: ServerDeps): (req: IncomingMessage, res: ServerResponse) => void {
   const logger = deps.logger
@@ -101,6 +228,11 @@ export function createHandler(deps: ServerDeps): (req: IncomingMessage, res: Ser
   return (req, res) => {
     void (async () => {
       const url = new URL(req.url ?? '/', 'http://localhost')
+      const acceptanceRoute = matchAcceptance(url.pathname, deps.config.appName)
+      if (acceptanceRoute !== undefined) {
+        await serveAcceptance(deps, req, res, url, acceptanceRoute)
+        return
+      }
       const { path } = splitMount(url.pathname, deps.config.appName)
 
       if (path === '/healthz') {
@@ -178,6 +310,11 @@ export function createUpgradeHandler(deps: ServerDeps): (req: IncomingMessage, s
   return (req, socket, head) => {
     void (async () => {
       const url = new URL(req.url ?? '/', 'http://localhost')
+      const acceptanceRoute = matchAcceptance(url.pathname, deps.config.appName)
+      if (acceptanceRoute !== undefined) {
+        await upgradeAcceptance(deps, req, socket, head, url, acceptanceRoute)
+        return
+      }
       const { path } = splitMount(url.pathname, deps.config.appName)
       const match = /^\/workspace(\/.*)?$/u.exec(path)
       if (match === null) {

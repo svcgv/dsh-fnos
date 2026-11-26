@@ -1,0 +1,5 @@
+# Offline prototype: intentionally disabled. Do not install or enable for users.
+- insert:
+    - id: dsh-fnos-offline-browser-prototype
+      name: '@dsh-fnos/offline-browser-prototype'
+      disabled: true

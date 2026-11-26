@@ -43,6 +43,28 @@ function debianLibDir(arch) {
   throw new Error(`unsupported Debian architecture ${arch}`)
 }
 
+function hasCommand(command) {
+  const probe = spawnSync(command, ['--version'], { stdio: 'ignore' })
+  return probe.error === undefined
+}
+
+/**
+ * Extract a Debian package payload.
+ * Prefer `dpkg-deb` so a host without binutils (`ar`) can still build locally;
+ * both paths end with the same `usr/lib/<triplet>/libatomic.so.1` layout.
+ */
+function extractDebianData(archive, work, extract) {
+  if (hasCommand('dpkg-deb')) {
+    runChecked('dpkg-deb', ['--extract', archive, extract])
+    return
+  }
+  runChecked('ar', ['x', archive], { cwd: work })
+  const dataArchive = ['data.tar.xz', 'data.tar.gz', 'data.tar.zst'].find((name) => existsSync(join(work, name)))
+  if (dataArchive === undefined) throw new Error(`Debian package has no supported data archive: ${archive}`)
+  const tarFlag = dataArchive.endsWith('.xz') ? '-xJf' : dataArchive.endsWith('.gz') ? '-xzf' : '--zstd'
+  runChecked('tar', dataArchive.endsWith('.zst') ? [tarFlag, '-f', join(work, dataArchive), '-C', extract] : [tarFlag, join(work, dataArchive), '-C', extract])
+}
+
 async function prepareLibatomic(arch, libatomic) {
   const target = architectureSpec(arch)
   const filename = `libatomic1_${libatomic.version}_${target.id}.deb`
@@ -55,12 +77,8 @@ async function prepareLibatomic(arch, libatomic) {
   const work = await mkdtemp(join(tempRoot, 'libatomic-'))
   const extract = join(work, 'extract')
   try {
-    runChecked('ar', ['x', archive], { cwd: work })
-    const dataArchive = ['data.tar.xz', 'data.tar.gz', 'data.tar.zst'].find((name) => existsSync(join(work, name)))
-    if (dataArchive === undefined) throw new Error(`Debian package has no supported data archive: ${archive}`)
     await mkdir(extract, { recursive: true })
-    const tarFlag = dataArchive.endsWith('.xz') ? '-xJf' : dataArchive.endsWith('.gz') ? '-xzf' : '--zstd'
-    runChecked('tar', dataArchive.endsWith('.zst') ? [tarFlag, '-f', join(work, dataArchive), '-C', extract] : [tarFlag, join(work, dataArchive), '-C', extract])
+    extractDebianData(archive, work, extract)
     const library = join(extract, 'usr', 'lib', debianLibDir(target.id), 'libatomic.so.1')
     if (!existsSync(library)) throw new Error(`libatomic.so.1 missing from ${archive}`)
     const detected = await detectElfArchitecture(library)
@@ -102,6 +120,10 @@ export async function stagePnpmRuntime(runtimeRoot, options) {
     const destination = join(runtimeRoot, 'pnpm')
     await rm(destination, { recursive: true, force: true })
     await cp(packageRoot, destination, { recursive: true, force: true })
+    // Some fuse/ACL filesystems (fnOS `trimacl`) materialise a copied tree with
+    // zero permission bits, which then blocks the writes below and would ship
+    // unusable modes inside the FPK. Normalise before touching the tree.
+    runChecked('chmod', ['-R', 'u+rwX', destination])
     await writeFile(join(destination, 'VERSION'), `${options.pnpm.version}\n`)
 
     const binDir = join(runtimeRoot, 'bin')

@@ -1,0 +1,8 @@
+# dsh-fnos fixed single-workspace policy.
+# The supervisor supplies a trusted, user-scoped Documents directory. The
+# workspace store maps <documents>/deepseek-harness/default-workspace to the
+# fixed <harness>/workspace directory, so first-use initialization and agent
+# sessions use the same persistent path without an interactive folder picker.
+- id: workspace-controller
+  config:
+    documentsDirectory: !!js "process.env.DSH_FNOS_WORKSPACE_DOCUMENTS"

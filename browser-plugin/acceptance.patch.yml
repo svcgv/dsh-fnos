@@ -1,0 +1,15 @@
+# fixed-private-fixture-reviewed-v1
+# EXPERIMENTAL: not a minimal or security-reviewed Web profile.
+# Never enable on a user profile. The two plugins also require explicit private
+# process environment switches. Acceptance mode permits the fixed page only.
+#
+# Acceptance fixed-page mode (no arbitrary URL/HTML): DSH_FNOS_BROWSER_ACCEPTANCE=1
+#   and DSH_FNOS_ACCEPTANCE_FIXTURE=1; the plugin then exposes only open_test_site
+#   and launches the worker with --experimental-private-http-fixture.
+- insert:
+    - id: dsh-fnos-acceptance-browser
+      name: './index.mjs'
+      disabled: !!js "process.env.DSH_FNOS_BROWSER_ACCEPTANCE !== '1' || process.env.DSH_FNOS_ACCEPTANCE_FIXTURE !== '1'"
+    - id: dsh-fnos-acceptance-offline-model
+      name: './acceptance-model.mjs'
+      disabled: !!js "process.env.DSH_FNOS_BROWSER_ACCEPTANCE !== '1' || process.env.DSH_FNOS_ACCEPTANCE_FIXTURE !== '1'"

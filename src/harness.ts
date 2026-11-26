@@ -110,6 +110,16 @@ async function waitForReady(port: number, cookie: string): Promise<void> {
   await response.arrayBuffer()
 }
 
+/** Opt-in visible browser panel wiring for exactly one administrator UID. */
+export interface BrowserLiveOptions {
+  /** The only UID whose Harness child gets the overlay and environment switches. */
+  readonly uid: string
+  /** Absolute overlay path; missing files make upstream refuse to start. */
+  readonly patch: string
+  /** Trusted switches the overlay reads; never derived from user input. */
+  readonly env: Readonly<Record<string, string>>
+}
+
 /** Per-user Harness process supervisor. */
 export class HarnessManager {
   readonly #instances = new Map<string, HarnessInstance>()
@@ -119,6 +129,7 @@ export class HarnessManager {
     private readonly config: AppConfig,
     private readonly store: WorkspaceStore,
     private readonly logger: Logger,
+    private readonly browserLive?: BrowserLiveOptions,
   ) {}
 
   /** Return a ready instance, starting one on demand. */
@@ -193,6 +204,7 @@ export class HarnessManager {
       HOME: paths.home,
       TMPDIR: paths.tmp,
       PWD: paths.workspace,
+      DSH_FNOS_WORKSPACE_DOCUMENTS: paths.root,
     }
   }
 
@@ -210,20 +222,39 @@ export class HarnessManager {
 
     const sharedEnv = await readSharedEnv(join(this.config.pkgEtc, 'shared.env'))
     const port = await getFreePort()
+    // The visible browser panel is an overlay, never a profile edit: only the
+    // explicitly allowed UID receives it, and only while the host passes the
+    // trusted switches the overlay checks.
+    const wanted = this.browserLive?.uid === uid ? this.browserLive : undefined
+    // A missing overlay must degrade to the normal instance, never block the user's GUI.
+    const browserLive = wanted !== undefined && existsSync(wanted.patch) ? wanted : undefined
+    if (wanted !== undefined && browserLive === undefined) {
+      logger.warn('browser-live-overlay-missing', { patch: wanted.patch })
+    }
+    const workspacePatch = join(this.config.appDest, 'harness', 'workspace.patch.yml')
+    if (!existsSync(workspacePatch)) logger.warn('workspace-overlay-missing', { patch: workspacePatch })
+    const patches = [
+      ...(existsSync(workspacePatch) ? ['--patch', workspacePatch] : []),
+      ...(browserLive === undefined ? [] : ['--patch', browserLive.patch]),
+    ]
+    // Launcher-owned flags must precede the app CLI arguments. In particular,
+    // --patch is parsed by `dsh`; placing it after --no-open forwards it to the
+    // web app and fails startup with "unknown option '--patch'".
     const args = [
       this.config.harness.entry,
       '--profile',
       this.config.harness.profile,
+      ...patches,
       '--no-open',
       '--port',
       String(port),
       ...this.config.harness.extraArgs,
     ]
 
-    logger.info('harness-spawn', { port, entry: this.config.harness.entry })
+    logger.info('harness-spawn', { port, entry: this.config.harness.entry, browserLive: browserLive !== undefined })
     const child = spawn(this.config.harness.executable, args, {
       cwd: paths.workspace,
-      env: this.#childEnv(paths, sharedEnv),
+      env: { ...this.#childEnv(paths, sharedEnv), ...browserLive?.env },
       stdio: ['ignore', 'pipe', 'pipe'],
     })
 

@@ -1,4 +1,4 @@
-import { lstat, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises'
+import { lstat, readFile, readdir, realpath, rename, rm, symlink, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { ensureDir, resolveInside, safeSegment } from './paths.ts'
 
@@ -204,6 +204,7 @@ export class WorkspaceStore {
       ensureDir(paths.home),
       ensureDir(paths.tmp),
     ])
+    await ensureDefaultWorkspaceAlias(paths)
   }
 
   async #readInstance(uid: string): Promise<Workspace | undefined> {
@@ -286,6 +287,30 @@ export class WorkspaceStore {
     const tmp = `${path}.tmp`
     await writeFile(tmp, `${JSON.stringify(value, undefined, 2)}\n`, { mode: 0o600 })
     await rename(tmp, path)
+  }
+}
+
+/**
+ * Map Harness's standard first-use directory onto the fnOS fixed workspace.
+ * Existing non-symlink directories are left untouched for compatibility; a
+ * wrong symlink fails closed instead of registering an unexpected path.
+ */
+async function ensureDefaultWorkspaceAlias(paths: WorkspacePaths): Promise<void> {
+  const parent = join(paths.root, 'deepseek-harness')
+  const link = join(parent, 'default-workspace')
+  await ensureDir(parent)
+  let info
+  try {
+    info = await lstat(link)
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+    await symlink(paths.workspace, link, 'dir')
+    return
+  }
+  if (!info.isSymbolicLink()) return
+  const [target, workspace] = await Promise.all([realpath(link), realpath(paths.workspace)])
+  if (target !== workspace) {
+    throw new Error(`default workspace alias points outside the fixed workspace: ${link}`)
   }
 }
 

@@ -123,6 +123,7 @@ GitHub Actions 的 `build-fpk` 工作流会用 `ubuntu-24.04` 与 `ubuntu-24.04-
 - 未开放 Harness 的分享、配对与 API 令牌登录。
 - Harness payload 取自 npm 发布版，体积约 1 GB；应用依赖飞牛商店 `nodejs_v26` 插件，不内置完整 Node 运行时。
 - 发布提供 amd64 与 arm64 两个独立 FPK；因包含 libatomic 和 Harness 原生依赖，不使用 `platform=all` 合并包。
+- 浏览器实验能力默认关闭，仅供管理员在可信整机手动验收：只会驱动 Chromium 打开内置固定测试页，不支持任意网站，也不构成多租户隔离。详见 [docs/browser-acceptance.md](docs/browser-acceptance.md)。
 
 ## 开发约定
 
