@@ -1,0 +1,174 @@
+browser-plugin/index.test.mjs
+  s_b20c3c760f01fe::t_3bf3473ed18249 1-162
+browser-plugin/live.real.test.mjs
+  s_b20c3c760f01fe::t_3bf3473ed18249 1-257
+browser-worker/isolation.test.mjs
+  s_b20c3c760f01fe::t_3bf3473ed18249 1-142
+browser-plugin/worker-client.test.mjs
+  s_b20c3c760f01fe::t_3bf3473ed18249 1-123
+browser-isolation/probe.mjs
+  s_b20c3c760f01fe::t_3bf3473ed18249 1-103
+browser-network/proxy-extra.test.mjs
+  s_b20c3c760f01fe::t_3bf3473ed18249 1-36
+browser-worker/signal.test.mjs
+  s_b20c3c760f01fe::t_3bf3473ed18249 1-68
+browser-worker/worker.test.mjs
+  s_b20c3c760f01fe::t_3bf3473ed18249 1-79
+browser-worker/worker.mjs
+  s_b20c3c760f01fe::t_3bf3473ed18249 1-330
+browser-plugin/agent-worker.test.mjs
+  s_b20c3c760f01fe::t_3bf3473ed18249 1-126
+package.json
+  s_b20c3c760f01fe::t_3bf3473ed18249 3
+browser-worker/live-panel.test.mjs
+  s_b20c3c760f01fe::t_3bf3473ed18249 1-110
+scripts/verify-fpk.mjs
+  s_b20c3c760f01fe::t_3bf3473ed18249 6,48-51
+src/browser-acceptance-optin.ts
+  s_b20c3c760f01fe::t_3bf3473ed18249 1-55
+src/harness.ts
+  s_b20c3c760f01fe::t_3bf3473ed18249 113-122,132,207,225-242,247,254,257
+test/experimental-browser-harness.test.ts
+  s_b20c3c760f01fe::t_3bf3473ed18249 1-406
+docs/browser-acceptance.md
+  s_b20c3c760f01fe::t_3bf3473ed18249 1-91
+browser-network/public-endpoint-experiment.test.mjs
+  s_b20c3c760f01fe::t_3bf3473ed18249 1-73
+src/server.ts
+  s_b20c3c760f01fe::t_3bf3473ed18249 12-33,40-41,121-223,231-235,313-317
+test/browser-plugin-live.test.mjs
+  s_b20c3c760f01fe::t_3bf3473ed18249 1-5
+browser-plugin/live.test.mjs
+  s_b20c3c760f01fe::t_3bf3473ed18249 1-232
+scripts/runtime-libraries.mjs
+  s_b20c3c760f01fe::t_3bf3473ed18249 46-67,81,123-126
+test/workspaces.test.ts
+  s_b20c3c760f01fe::t_3bf3473ed18249 2,48-51,59-69
+  s_b20c3c760f01fe::t_0b1351328b639d 70-71
+browser-network/test-namespace-child.mjs
+  s_b20c3c760f01fe::t_3bf3473ed18249 1-30
+browser-plugin/acceptance.patch.yml
+  s_b20c3c760f01fe::t_3bf3473ed18249 1-15
+browser-network/proxy.test.mjs
+  s_b20c3c760f01fe::t_3bf3473ed18249 1-63
+browser-plugin/panel/mock-ws.mjs
+  s_b20c3c760f01fe::t_3bf3473ed18249 1-725
+browser-plugin/live.mjs
+  s_b20c3c760f01fe::t_3bf3473ed18249 1-576
+browser-worker/isolation.mjs
+  s_b20c3c760f01fe::t_3bf3473ed18249 1-187
+scripts/build-harness-payload.mjs
+  s_b20c3c760f01fe::t_3bf3473ed18249 2-3,62-76,92-95,99-124,179-180
+browser-worker/live-panel.mjs
+  s_b20c3c760f01fe::t_3bf3473ed18249 1-126
+browser-network/fixed-endpoint-test-only.mjs
+  s_b20c3c760f01fe::t_3bf3473ed18249 1-38
+test/acceptance.test.ts
+  s_b20c3c760f01fe::t_3bf3473ed18249 1-325
+test/fixtures/capture-harness.mjs
+  s_b20c3c760f01fe::t_3bf3473ed18249 1-48
+browser-network/public-endpoint-experiment.mjs
+  s_b20c3c760f01fe::t_3bf3473ed18249 1-86
+browser-plugin/cordis.patch.yml
+  s_b20c3c760f01fe::t_3bf3473ed18249 1-5
+browser-plugin/panel/panel.js
+  s_b20c3c760f01fe::t_3bf3473ed18249 1-1388
+harness-patches/workspace.patch.yml
+  s_b20c3c760f01fe::t_3bf3473ed18249 1-8
+test/harness-browser-live.test.ts
+  s_b20c3c760f01fe::t_3bf3473ed18249 1-123
+browser-plugin/cordis.test.mjs
+  s_b20c3c760f01fe::t_3bf3473ed18249 1-106
+browser-plugin/panel/panel.css
+  s_b20c3c760f01fe::t_3bf3473ed18249 1-521
+browser-network/proxy.mjs
+  s_b20c3c760f01fe::t_3bf3473ed18249 1-123
+src/workspaces.ts
+  s_b20c3c760f01fe::t_3bf3473ed18249 1,207,293-314
+  s_b20c3c760f01fe::t_0aee5b4f702c63 315-316
+browser-worker/fixture-http.test.mjs
+  s_b20c3c760f01fe::t_3bf3473ed18249 1-120
+browser-worker/process-groups.mjs
+  s_b20c3c760f01fe::t_3bf3473ed18249 1-107
+browser-worker/private-http-research.test.mjs
+  s_b20c3c760f01fe::t_3bf3473ed18249 1-162
+browser-plugin/runtime.test.mjs
+  s_b20c3c760f01fe::t_3bf3473ed18249 1-255
+browser-plugin/integration.test.mjs
+  s_b20c3c760f01fe::t_3bf3473ed18249 1-53
+browser-worker/socket-fd-research.test.mjs
+  s_b20c3c760f01fe::t_3bf3473ed18249 1-93
+packaging/fpk/manifest
+  s_b20c3c760f01fe::t_3bf3473ed18249 2,21
+browser-worker/fixture-http.mjs
+  s_b20c3c760f01fe::t_3bf3473ed18249 1-135
+browser-plugin/package.json
+  s_b20c3c760f01fe::t_3bf3473ed18249 1-14
+browser-worker/browser-url.mjs
+  s_b20c3c760f01fe::t_3bf3473ed18249 1-52
+test/browser-acceptance-optin.test.ts
+  s_b20c3c760f01fe::t_3bf3473ed18249 1-101
+browser-plugin/live.patch.yml
+  s_b20c3c760f01fe::t_3bf3473ed18249 1-10
+browser-network/namespace-e2e.test.mjs
+  s_b20c3c760f01fe::t_3bf3473ed18249 1-60
+browser-plugin/index.mjs
+  s_b20c3c760f01fe::t_3bf3473ed18249 1-50
+browser-plugin/runtime.mjs
+  s_b20c3c760f01fe::t_3bf3473ed18249 1-174
+browser-plugin/acceptance-model.mjs
+  s_b20c3c760f01fe::t_3bf3473ed18249 1-83
+src/experimental-browser-harness.ts
+  s_b20c3c760f01fe::t_3bf3473ed18249 1-496
+browser-network/fixed-endpoint-child-test-only.mjs
+  s_b20c3c760f01fe::t_3bf3473ed18249 1-18
+src/index.ts
+  s_b20c3c760f01fe::t_3bf3473ed18249 3-4,6,20-50,92
+browser-plugin/live-ws.mjs
+  s_b20c3c760f01fe::t_3bf3473ed18249 1-179
+browser-network/fixed-endpoint-e2e.test.mjs
+  s_b20c3c760f01fe::t_3bf3473ed18249 1-71
+browser-plugin/worker-client.mjs
+  s_b20c3c760f01fe::t_3bf3473ed18249 1-165
+test/release-config.test.mjs
+  s_b20c3c760f01fe::t_3bf3473ed18249 2,28-31
+  s_b20c3c760f01fe::t_34c2e4920dc3ce 32-33
+browser-worker/chromium-research.test.mjs
+  s_b20c3c760f01fe::t_3bf3473ed18249 1-106
+browser-worker/process-groups.test.mjs
+  s_b20c3c760f01fe::t_3bf3473ed18249 1-71
+README.md
+  s_b20c3c760f01fe::t_7b43414c88787f 126
+browser-isolation/DEPLOYMENT-SECURITY.md
+  s_b20c3c760f01fe::t_035b21d8c90c49 1-27
+browser-isolation/README.md
+  s_b20c3c760f01fe::t_b17cff86bda399 1-30
+browser-network/README.md
+  s_b20c3c760f01fe::t_5df9601dd97407 1-37
+browser-plugin/README.md
+  s_b20c3c760f01fe::t_89eeac853d920f 1-72
+browser-plugin/panel/README.md
+  s_b20c3c760f01fe::t_5752ea4a7ecf50 1-161
+browser-worker/HTTP-EXPERIMENT.md
+  s_b20c3c760f01fe::t_19424b7daba056 1-57
+browser-worker/README.md
+  s_b20c3c760f01fe::t_cea7ac14f3e7ac 1-54
+package-lock.json
+  s_b20c3c760f01fe::t_0036bd8a4d0e3a 3,9
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "db3c8a2cc1f4941e3fef670fbefbec2386c1115e",
+  "prompts": {},
+  "sessions": {
+    "s_b20c3c760f01fe": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a215f7-5658-7622-8324-769d9b5110d4",
+        "model": "deepseek-v4.1-flash"
+      },
+      "human_author": "svcgv <hb1230123@hotmail.com>"
+    }
+  }
+}
