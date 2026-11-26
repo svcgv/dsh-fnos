@@ -1,6 +1,6 @@
 import { existsSync } from 'node:fs'
-import { mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises'
-import { dirname, join } from 'node:path'
+import { cp, mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { basename, dirname, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { spawnSync } from 'node:child_process'
 import { normalizeModes, root } from './build.mjs'
@@ -58,6 +58,13 @@ const nativePackages = (nodeArch) => [
   join('node_modules', `sherpa-onnx-linux-${nodeArch}`),
 ]
 
+/** The fixed-page browser extension and its private worker ship beside the Harness. */
+const payloadExtensions = [
+  join('browser-plugin', 'index.mjs'),
+  join('browser-plugin', 'acceptance.patch.yml'),
+  join('browser-worker', 'worker.mjs'),
+]
+
 /** Validate that a Harness payload is complete and was built for the target architecture. */
 export async function validateHarnessPayload(directory, arch) {
   const target = architectureSpec(arch)
@@ -72,7 +79,30 @@ export async function validateHarnessPayload(directory, arch) {
   if (missing.length > 0) {
     throw new Error(`Harness payload is missing Linux/${target.nodeArch} native packages: ${missing.join(', ')}`)
   }
+  const missingExtensions = payloadExtensions.filter((path) => !existsSync(join(directory, path)))
+  if (missingExtensions.length > 0) {
+    throw new Error(`Harness payload is missing the fixed-page browser extension: ${missingExtensions.join(', ')}`)
+  }
   return marker
+}
+
+/** Copy the opt-in browser extension into a Harness payload, without its tests. */
+async function copyBrowserExtensions(dest) {
+  for (const name of ['browser-plugin', 'browser-worker']) {
+    const source = join(root, name)
+    const entry = join(source, name === 'browser-plugin' ? 'index.mjs' : 'worker.mjs')
+    if (!existsSync(entry)) throw new Error(`browser extension source is incomplete: ${entry}`)
+    const target = join(dest, name)
+    await rm(target, { recursive: true, force: true })
+    await cp(source, target, {
+      recursive: true,
+      filter: (path) => {
+        const file = basename(path)
+        if (file === 'node_modules' || file.endsWith('.test.mjs') || file === 'README.md' || file === 'HTTP-EXPERIMENT.md') return false
+        return true
+      },
+    })
+  }
 }
 
 /** Build and prune one architecture-specific Harness payload. */
@@ -128,6 +158,7 @@ export async function buildHarnessPayload(options) {
     nodeArch: target.nodeArch,
     harnessVersion: version,
   }, undefined, 2)}\n`)
+  await copyBrowserExtensions(dest)
 
   // pnpm/npm copy source modes; `trimacl` reports 000 for ACL-managed files.
   await normalizeModes(dest, false)

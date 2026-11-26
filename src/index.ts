@@ -1,7 +1,9 @@
 import { createServer } from 'node:http'
 import { chmod, unlink } from 'node:fs/promises'
 import { dirname } from 'node:path'
+import { readBrowserAcceptanceOptIn } from './browser-acceptance-optin.ts'
 import { loadConfig } from './config.ts'
+import { ExperimentalBrowserAcceptance } from './experimental-browser-harness.ts'
 import { HarnessManager } from './harness.ts'
 import { createLogger } from './logger.ts'
 import { ensureDir } from './paths.ts'
@@ -16,8 +18,30 @@ await Promise.all([ensureDir(config.pkgHome), ensureDir(config.pkgVar), ensureDi
 const store = new WorkspaceStore({ homeRoot: config.pkgHome })
 const harness = new HarnessManager(config, store, logger)
 
-const server = createServer(createHandler({ config, store, harness, logger }))
-server.on('upgrade', createUpgradeHandler({ config, store, harness, logger }))
+// The experimental browser acceptance window stays off unless an administrator
+// created the marker files in the app data directory. It is a manual acceptance
+// aid for one trusted administrator, never a tenant boundary.
+const optIn = await readBrowserAcceptanceOptIn(config.pkgVar)
+let acceptance: ExperimentalBrowserAcceptance | undefined
+if (optIn.enabled) {
+  process.env.DSH_FNOS_BROWSER_ACCEPTANCE = '1'
+  acceptance = new ExperimentalBrowserAcceptance({
+    appHome: config.pkgHome,
+    appDest: config.appDest,
+    enabled: true,
+    uid: optIn.uid,
+  })
+  logger.info('browser-acceptance-enabled', { uid: optIn.uid })
+} else if (optIn.reason !== 'not-configured') {
+  logger.warn('browser-acceptance-disabled', { reason: optIn.reason })
+}
+
+const deps = acceptance === undefined
+  ? { config, store, harness, logger }
+  : { config, store, harness, logger, acceptance }
+
+const server = createServer(createHandler(deps))
+server.on('upgrade', createUpgradeHandler(deps))
 
 async function listen(): Promise<void> {
   if (config.listenPort !== undefined) {
@@ -59,6 +83,7 @@ async function shutdown(signal: string): Promise<void> {
   logger.info('shutdown', { signal })
   clearInterval(reaper)
   await new Promise<void>((resolve) => server.close(() => resolve()))
+  await acceptance?.stopAll()
   await harness.stopAll()
   if (config.listenPort === undefined) {
     await unlink(config.socketPath).catch(() => undefined)

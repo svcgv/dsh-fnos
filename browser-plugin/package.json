@@ -1,0 +1,14 @@
+{
+  "name": "@dsh-fnos/offline-browser-prototype",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "Disabled experimental offline browser prototype; not for installation or untrusted HTML",
+  "exports": { ".": "./index.mjs" },
+  "files": ["index.mjs", "runtime.mjs", "worker-client.mjs", "cordis.patch.yml", "README.md"],
+  "peerDependencies": {
+    "@deepseek-ai/dsh-mcp-client": "0.2.2-rc.5",
+    "@deepseek-ai/dsh-scope": "0.2.2-rc.5"
+  },
+  "dsh": { "bundle": { "patch": "./cordis.patch.yml" } }
+}
