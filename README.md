@@ -89,7 +89,7 @@ dist/dsh-fnos-<version>-linux-arm64.fpk
 
 GitHub Actions 的 `build-fpk` 工作流会用 `ubuntu-24.04` 与 `ubuntu-24.04-arm` 并行构建，并在汇总任务中再次验证两份产物。未配置 `FNPACK_KEY` / `FNPACK_CERT` 时生成本地验证用 unsigned FPK，不可作为正式商店发布包。
 
-运行时使用 `/var/apps/nodejs_v26/target/bin/node`。FPK 携带 `runtime/lib/libatomic.so.1` 兼容库和固定版 pnpm；启动时将 `runtime/bin` 加入 `PATH`，供 Harness 插件安装器调用，不修改 NAS 系统。没有完整 Harness payload 时可用 `--allow-missing-payload` 生成仅用于调试的包，该包会跳过严格发布校验。
+运行时使用 `/var/apps/nodejs_v26/target/bin/node`。FPK 携带 `runtime/lib/libatomic.so.1` 兼容库和固定版 pnpm；启动时将 `runtime/bin` 加入 `PATH`，供 Harness 插件安装器调用，不修改 NAS 系统。Harness 的 PTC（`run_code`）子进程会清空继承环境，因此 `runtime/bin/dsh-ptc-node` 额外在 `exec` 时只把该兼容库目录交给 `nodejs_v26`。没有完整 Harness payload 时可用 `--allow-missing-payload` 生成仅用于调试的包，该包会跳过严格发布校验。
 
 ## 安装后
 

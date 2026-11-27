@@ -6,3 +6,13 @@
 - id: workspace-controller
   config:
     documentsDirectory: !!js "process.env.DSH_FNOS_WORKSPACE_DOCUMENTS"
+
+# PTC (`run_code`) workers start from a cleared environment, so the bundled
+# libatomic.so.1 cannot reach them through an inherited LD_LIBRARY_PATH. The
+# supervisor exports the absolute path of an app-local launcher that injects only
+# that library directory before it execs the nodejs_v26 runtime. The variable is
+# absent in unpackaged development and for a custom Node, and then upstream's
+# default executable stays in effect.
+- id: ptc-runtime
+  config:
+    launch: !!js "process.env.DSH_FNOS_PTC_NODE === undefined ? undefined : { kind: 'node-script', executable: process.env.DSH_FNOS_PTC_NODE }"

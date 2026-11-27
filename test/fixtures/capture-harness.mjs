@@ -17,6 +17,7 @@ if (process.env.CAPTURE_ENV !== undefined) {
     DSH_FNOS_BROWSER_LIVE: process.env.DSH_FNOS_BROWSER_LIVE ?? null,
     DSH_FNOS_ACCEPTANCE_FIXTURE: process.env.DSH_FNOS_ACCEPTANCE_FIXTURE ?? null,
     DSH_FNOS_BROWSER_NETWORK: process.env.DSH_FNOS_BROWSER_NETWORK ?? null,
+    DSH_FNOS_PTC_NODE: process.env.DSH_FNOS_PTC_NODE ?? null,
     DSH_FNOS_WORKSPACE_DOCUMENTS: process.env.DSH_FNOS_WORKSPACE_DOCUMENTS ?? null,
     TMPDIR: process.env.TMPDIR ?? null,
   }))

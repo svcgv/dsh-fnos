@@ -82,6 +82,7 @@ export async function verifyFpk(file, arch) {
       'runtime/lib/VERSION',
       'runtime/bin/pnpm',
       'runtime/bin/pnpx',
+      'runtime/bin/dsh-ptc-node',
       'runtime/pnpm/bin/pnpm.cjs',
       'runtime/pnpm/VERSION',
     ]) {
@@ -100,9 +101,17 @@ export async function verifyFpk(file, arch) {
     if (pnpmVersion !== config.pnpm.version) {
       throw new Error(`pnpm version is ${JSON.stringify(pnpmVersion)}, expected ${config.pnpm.version}`)
     }
-    for (const command of ['pnpm', 'pnpx']) {
+    for (const command of ['pnpm', 'pnpx', 'dsh-ptc-node']) {
       const mode = (await stat(join(appDir, 'runtime', 'bin', command))).mode
       if ((mode & 0o111) === 0) throw new Error(`runtime/bin/${command} is not executable`)
+    }
+    // The launcher must stay the app-local library injector, not a copy of Node
+    // or a stale script that silently leaves the PTC worker unstartable.
+    const launcher = await readFile(join(appDir, 'runtime', 'bin', 'dsh-ptc-node'), 'utf8')
+    for (const marker of ['libatomic.so.1', 'nodejs_v26', 'LD_LIBRARY_PATH']) {
+      if (!launcher.includes(marker)) {
+        throw new Error(`runtime/bin/dsh-ptc-node does not mention ${marker}`)
+      }
     }
     const marker = JSON.parse(await readFile(join(appDir, 'harness', '.dsh-fnos-arch.json'), 'utf8'))
     if (marker.architecture !== target.id || marker.fnosPlatform !== target.fnosPlatform) {

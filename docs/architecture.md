@@ -44,6 +44,8 @@ install_dep_apps = nodejs_v26
 
 启动脚本从 `/var/apps/nodejs_v26/target/bin/node` 解析运行时。当前 fnOS 的该插件缺少 `libatomic.so.1`，因此应用在 `runtime/lib/` 携带 Debian 12 的兼容库，并通过仅对应用进程生效的 `LD_LIBRARY_PATH` 注入；不安装或修改宿主系统库。
 
+Harness 的 PTC（`run_code`）工作进程在启动前会清空继承环境，`LD_LIBRARY_PATH` 到不了它。FPK 因此在 `runtime/bin/dsh-ptc-node` 携带一个启动器：它按自身安装位置推导 `runtime/lib`，只把该目录注入即将 `exec` 的 `nodejs_v26`，再原样透传参数。supervisor 仅当自身 Node 与 `nodejs_v26` 是同一真实可执行文件、且启动器存在可执行时才通过工作区 overlay 把它设为 `ptc-runtime.launch.executable`；开发环境或自定义 Node 保持上游默认。该路径是 supervisor 内部事实，`shared.env` 不能覆盖。
+
 Harness 插件安装器依赖 `pnpm`。FPK 在 `runtime/pnpm/` 携带固定版纯 JS pnpm，并在 `runtime/bin/` 提供 `pnpm`/`pnpx` wrapper；启动脚本把该目录加入 `PATH`，因此插件安装不需要宿主预装 pnpm。
 
 ## 请求生命周期

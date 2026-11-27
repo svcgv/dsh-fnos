@@ -1,0 +1,42 @@
+#!/bin/sh
+# Run the fnOS Node runtime with the app-local compatibility libraries.
+#
+# PTC ("run_code") workers deliberately start from a cleared environment, so a
+# supervisor-exported LD_LIBRARY_PATH never reaches them. The supervisor passes
+# this launcher as the PTC executable instead: it derives the bundled library
+# directory from its own installed location, and execs the nodejs_v26 runtime
+# with exactly that directory. The model program, the sandbox wrapping, and the
+# upstream package stay untouched, and no system library is installed.
+#
+# Diagnostic/test override: PTC clears the environment before this launcher runs,
+# so DSH_FNOS_PTC_NODE_APP cannot change the production worker's Node binary. It
+# exists so a test can execute the launcher with a stand-in Node.
+set -u
+
+case "$0" in
+    */*) SELF="$0" ;;
+    *)
+        printf '%s\n' 'dsh-ptc-node: executable was not invoked by path' >&2
+        exit 1
+        ;;
+esac
+
+SELF_DIR=$(CDPATH= cd -- "${SELF%/*}" 2>/dev/null && pwd) || {
+    printf 'dsh-ptc-node: cannot resolve the runtime directory from %s\n' "$SELF" >&2
+    exit 1
+}
+LIB_DIR="${SELF_DIR%/*}/lib"
+NODE_APP="${DSH_FNOS_PTC_NODE_APP:-/var/apps/nodejs_v26/target/bin/node}"
+
+if [ ! -r "${LIB_DIR}/libatomic.so.1" ]; then
+    printf 'dsh-ptc-node: %s is missing; reinstall the current FPK\n' "${LIB_DIR}/libatomic.so.1" >&2
+    exit 1
+fi
+if [ ! -x "${NODE_APP}" ]; then
+    printf 'dsh-ptc-node: nodejs_v26 runtime is not executable: %s\n' "${NODE_APP}" >&2
+    exit 1
+fi
+
+LD_LIBRARY_PATH="${LIB_DIR}"
+export LD_LIBRARY_PATH
+exec "${NODE_APP}" "$@"

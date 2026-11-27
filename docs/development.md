@@ -46,11 +46,11 @@ npm run release -- --arch arm64  # ARM64 构建机
 2. 下载 Debian 12 `libatomic` 与固定版 pnpm，校验固定 SHA-256；pnpm 使用纯 JS 包。
 3. 在隔离 staging 目录生成对应 `manifest`，不修改源码目录中的模板。
 4. 调用 `fnpack` 生成 `<version>-linux-<arch>.fpk`。
-5. 解包 FPK 复核 `nodejs_v26` 依赖、server、Harness entry、libatomic 版本/ELF、pnpm wrapper/版本和 payload 架构。
+5. 解包 FPK 复核 `nodejs_v26` 依赖、server、Harness entry、libatomic 版本/ELF、pnpm wrapper/版本、PTC 启动器及其执行权限和 payload 架构。
 
 产物名固定为 `dist/dsh-fnos-<version>-linux-<amd64|arm64>.fpk`。无 `FNPACK_KEY` / `FNPACK_CERT` 时只能生成 unsigned 调试包，不能作为正式发布物。
 
-GitHub Actions 的 `.github/workflows/build-fpk.yml` 使用原生 amd64/arm64 runner 并行构建，并由 `verify-both-architectures` 汇总任务再次检查两份产物。应用启动时将自身 `runtime/lib` 注入 `LD_LIBRARY_PATH`，这是为了兼容当前 `nodejs_v26` 插件缺失 `libatomic.so.1` 的 fnOS 环境。
+GitHub Actions 的 `.github/workflows/build-fpk.yml` 使用原生 amd64/arm64 runner 并行构建，并由 `verify-both-architectures` 汇总任务再次检查两份产物。应用启动时将自身 `runtime/lib` 注入 `LD_LIBRARY_PATH`，这是为了兼容当前 `nodejs_v26` 插件缺失 `libatomic.so.1` 的 fnOS 环境。Harness 的 PTC 子进程会清空继承环境，所以另由 `runtime/bin/dsh-ptc-node` 在 `exec` 时只注入该库目录，supervisor 通过工作区 overlay 把它交给 `ptc-runtime`。
 
 ## 单工作区与迁移约束
 

@@ -2,9 +2,20 @@
 
 当前部署有两条独立路径：
 
-- 正常 Harness 工作区的可见「浏览器」面板：管理员开启后使用网络浏览模式。模型的 `navigate` 每次都会在面板中申请用户批准，支持本机、局域网和公网 HTTP/HTTPS 地址。详见 `docs/browser-acceptance.md`。
+- 正常 Harness 工作区右侧栏的多标签「受控浏览器」：管理员开启后使用网络浏览模式。用户从右栏指南新建互相独立的标签，模型的 `navigate` 每次都会在目标标签内申请用户批准，支持本机、局域网和公网 HTTP/HTTPS 地址。详见 `docs/browser-acceptance.md`。
 - `/acceptance/` 固定页验收：只打开内置 `http://127.0.0.1:38179/` fixture，不接受 URL 或 HTML。
 
+
+## 右侧栏多标签 UI（网络浏览模式的当前形态）
+
+`live.patch.yml` 同时加载两个插件行，缺一不可：
+
+- `dsh-fnos-browser-live`（`./live.mjs`）：Host 端多标签注册表、`browser-live/ws`，以及 `browser_live_control` 工具（`list_tabs` + 每个标签的 `tabId` 定向操作，标签上限 6、同时运行 worker 上限 3）。
+- `dsh-fnos-browser-sidebar`（`./sidebar/index.mjs`）：Client 插件入口，`sidebar/package.json` 的 `dsh.client` 清单指向 `sidebar/client.js`，在右栏 guide 注册「新建受控浏览器」，并在每个标签里渲染画面、工具栏与访问授权层。
+
+每个标签使用独立 WS `browser-live/ws?sessionId=…&tabId=…`；服务端先 `ctx.connection.admit(req)` 且只接受 owner principal（已登录浏览器会话）的连接，sessionId 还必须与实际 agent session 匹配。ID 只用于路由，不是授权凭据。
+
+旧 `panel/` 前端资源仍由 Host 以 `browser-live/panel.js`、`browser-live/panel.css` 提供，用于兼容既有文档与本地自测；Host 不再向页面注入它们，正常 UI 中不存在右下角浮窗。不要把 `panel/` 与新右栏同时当作同一实例的视图启用。
 以下内容是低层 worker 和既有离线实验的说明；网络浏览仍不是多租户安全边界，也不构成生产级网络隔离。
 
 **不得安装到用户 profile 或启用。** 这不是浏览真实网站的功能、不是多租户安全边界，也没有经过生产安全审计。patch 默认禁用，入口还有单独的进程级实验开关；本仓库不配置、不启动该插件。浏览器 worker 的输入 HTML 必须是可信测试内容。实验文件系统隔离尚未完成安全审计，固定只读绑定会暴露绑定内容，同 UID 进程可能干扰；不得将不可信网页、秘密或用户数据交给它。

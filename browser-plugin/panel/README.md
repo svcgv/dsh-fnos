@@ -1,5 +1,7 @@
 # 可见浏览器面板（Web GUI 前端资源）
 
+> 状态（2026-11-26）：网络浏览已改为 Harness 原生右侧栏多标签 UI（见 `browser-plugin/sidebar/`）。Host 不再向页面注入 `panel.js`，右下角浮窗不会出现；本目录资源仅作为 `browser-live/panel.js` / `browser-live/panel.css` 的兼容静态路由保留，并供本目录自测使用。
+
 默认关闭的“可见浏览器面板”前端资源：宿主在 Web GUI 页面注入
 
 ```html

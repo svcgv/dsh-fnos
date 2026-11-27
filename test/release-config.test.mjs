@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict'
-import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import test from 'node:test'
 import { validateHarnessPayload } from '../scripts/build-harness-payload.mjs'
+import { ptcLauncherSource, stagePtcLauncher } from '../scripts/runtime-libraries.mjs'
 import {
   REQUIRED_ARCHITECTURES,
   architectureSpec,
@@ -29,6 +30,31 @@ test('ships the fixed first-use workspace overlay', async () => {
   const patch = await readFile(new URL('../harness-patches/workspace.patch.yml', import.meta.url), 'utf8')
   assert.match(patch, /id: workspace-controller/u)
   assert.match(patch, /DSH_FNOS_WORKSPACE_DOCUMENTS/u)
+  // PTC workers clear their environment, so the workspace overlay must point the
+  // runtime at the app-local launcher the supervisor exports.
+  assert.match(patch, /id: ptc-runtime/u)
+  assert.match(patch, /DSH_FNOS_PTC_NODE/u)
+  assert.match(patch, /executable/u)
+})
+
+test('stages an executable PTC launcher beside the runtime libraries', async () => {
+  const runtimeRoot = await mkdtemp(join(tmpdir(), 'dsh-fnos-ptc-stage-'))
+  try {
+    const staged = await stagePtcLauncher(runtimeRoot)
+    assert.equal(staged, join(runtimeRoot, 'bin', 'dsh-ptc-node'))
+    const [expected, actual, info] = await Promise.all([
+      readFile(ptcLauncherSource, 'utf8'),
+      readFile(staged, 'utf8'),
+      stat(staged),
+    ])
+    assert.equal(actual, expected)
+    assert.notEqual(info.mode & 0o111, 0, 'launcher must be executable')
+    for (const marker of ['libatomic.so.1', 'nodejs_v26', 'LD_LIBRARY_PATH']) {
+      assert.ok(expected.includes(marker), `launcher must mention ${marker}`)
+    }
+  } finally {
+    await rm(runtimeRoot, { recursive: true, force: true })
+  }
 })
 
 test('maps release architectures to fnOS, Node and ELF identities', () => {

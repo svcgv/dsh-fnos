@@ -72,6 +72,7 @@ test('only the opted-in uid receives the browser panel overlay and switches', { 
       DSH_FNOS_BROWSER_LIVE: '1',
       DSH_FNOS_BROWSER_NETWORK: '1',
       DSH_FNOS_ACCEPTANCE_FIXTURE: null,
+      DSH_FNOS_PTC_NODE: null,
       DSH_FNOS_WORKSPACE_DOCUMENTS: join(root, 'home', 'users', '1000', 'harness'),
       TMPDIR: join(root, 'home', 'users', '1000', 'harness', 'tmp'),
     })
@@ -88,6 +89,7 @@ test('only the opted-in uid receives the browser panel overlay and switches', { 
       DSH_FNOS_BROWSER_LIVE: null,
       DSH_FNOS_BROWSER_NETWORK: null,
       DSH_FNOS_ACCEPTANCE_FIXTURE: null,
+      DSH_FNOS_PTC_NODE: null,
       DSH_FNOS_WORKSPACE_DOCUMENTS: join(root, 'home', 'users', '2000', 'harness'),
       TMPDIR: join(root, 'home', 'users', '2000', 'harness', 'tmp'),
     })
@@ -112,6 +114,7 @@ test('a missing overlay degrades to the normal instance instead of failing start
       DSH_FNOS_BROWSER_LIVE: null,
       DSH_FNOS_BROWSER_NETWORK: null,
       DSH_FNOS_ACCEPTANCE_FIXTURE: null,
+      DSH_FNOS_PTC_NODE: null,
       DSH_FNOS_WORKSPACE_DOCUMENTS: join(root, 'home', 'users', '1000', 'harness'),
       TMPDIR: join(root, 'home', 'users', '1000', 'harness', 'tmp'),
     })

@@ -11,6 +11,9 @@ import { architectureSpec, detectElfArchitecture } from './release-config.mjs'
 const downloadRoot = join(root, '.local', 'cache', 'debian')
 const npmCacheRoot = join(root, '.local', 'cache', 'npm')
 
+/** Source of the PTC worker launcher staged beside the bundled compatibility libraries. */
+export const ptcLauncherSource = join(root, 'packaging', 'runtime', 'bin', 'dsh-ptc-node')
+
 function runChecked(command, args, options = {}) {
   const result = spawnSync(command, args, { encoding: 'utf8', ...options })
   if (result.error !== undefined) throw result.error
@@ -99,6 +102,16 @@ export async function stageRuntimeLibraries(destination, options) {
   await mkdir(destination, { recursive: true })
   await writeFile(join(destination, 'libatomic.so.1'), source)
   await writeFile(join(destination, 'VERSION'), `${options.libatomic.version}\n`)
+}
+
+/** Stage the PTC worker launcher that gives the fnOS Node the bundled libraries. */
+export async function stagePtcLauncher(runtimeRoot) {
+  const binDir = join(runtimeRoot, 'bin')
+  const destination = join(binDir, 'dsh-ptc-node')
+  await mkdir(binDir, { recursive: true })
+  await cp(ptcLauncherSource, destination)
+  await chmod(destination, 0o755)
+  return destination
 }
 
 /** Stage the pinned pure-JavaScript pnpm CLI and command shims for Harness plugins. */

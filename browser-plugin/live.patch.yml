@@ -1,5 +1,7 @@
 # network-browser-permission-reviewed-v1
-# EXPERIMENTAL: visible browser panel in the normal workspace GUI.
+# EXPERIMENTAL: controlled browser tabs in the normal workspace right sidebar.
+# Two rows: Host multi-tab registry/WS/tool (live.mjs) and the sidebar Client
+# plugin (sidebar/index.mjs -> sidebar/client.js via dsh.client manifest).
 # Never enable on a shared or untrusted profile: the panel drives a real headless
 # Chromium and lets both the signed-in user and the Agent operate one page.
 # Network mode accepts HTTP/HTTPS navigation to local, LAN, and public targets
@@ -7,4 +9,7 @@
 - insert:
     - id: dsh-fnos-browser-live
       name: './live.mjs'
+      disabled: !!js "process.env.DSH_FNOS_BROWSER_LIVE !== '1' || (process.env.DSH_FNOS_BROWSER_NETWORK !== '1' && process.env.DSH_FNOS_ACCEPTANCE_FIXTURE !== '1')"
+    - id: dsh-fnos-browser-sidebar
+      name: './sidebar/index.mjs'
       disabled: !!js "process.env.DSH_FNOS_BROWSER_LIVE !== '1' || (process.env.DSH_FNOS_BROWSER_NETWORK !== '1' && process.env.DSH_FNOS_ACCEPTANCE_FIXTURE !== '1')"

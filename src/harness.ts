@@ -1,5 +1,5 @@
 import { spawn, type ChildProcessByStdio } from 'node:child_process'
-import { existsSync } from 'node:fs'
+import { accessSync, constants, existsSync, realpathSync } from 'node:fs'
 import { readFile, symlink } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { Readable } from 'node:stream'
@@ -29,6 +29,46 @@ export interface HarnessInstance {
 
 const TOKEN_URL = /(https?:\/\/\S+[?&]token=[A-Za-z0-9._~%-]+)/u
 const LOG_TAIL_LINES = 40
+
+/** The fnOS `nodejs_v26` plugin's Node executable; the FPK manifest requires it. */
+export const FNOS_NODE_APP = '/var/apps/nodejs_v26/target/bin/node'
+
+/** App-relative path of the PTC launcher staged beside the bundled libraries. */
+const PTC_LAUNCHER = 'runtime/bin/dsh-ptc-node'
+
+/**
+ * Resolve the app-local PTC launcher, or `undefined` to keep upstream's default
+ * executable.
+ *
+ * PTC (`run_code`) workers start from a cleared environment, so the bundled
+ * `libatomic.so.1` cannot reach them through an inherited `LD_LIBRARY_PATH`.
+ * The launcher injects that one library directory before it execs Node. It is
+ * only correct when the supervisor runs the same real Node executable the FPK
+ * declares, and it only exists inside the installed application tree, so every
+ * development or custom-Node launch keeps upstream behavior.
+ */
+export function resolvePtcLauncher(
+  appDest: string,
+  executable: string,
+  nodeApp: string = FNOS_NODE_APP,
+): string | undefined {
+  let runtime: string
+  let current: string
+  try {
+    runtime = realpathSync(nodeApp)
+    current = realpathSync(executable)
+  } catch {
+    return undefined
+  }
+  if (runtime !== current) return undefined
+  const launcher = join(appDest, PTC_LAUNCHER)
+  try {
+    accessSync(launcher, constants.X_OK)
+  } catch {
+    return undefined
+  }
+  return launcher
+}
 
 /** Error raised when a Harness instance cannot become ready. */
 export class HarnessStartError extends Error {
@@ -251,10 +291,26 @@ export class HarnessManager {
       ...this.config.harness.extraArgs,
     ]
 
-    logger.info('harness-spawn', { port, entry: this.config.harness.entry, browserLive: browserLive !== undefined })
+    // The launcher path is a supervisor-owned internal fact: an environment file
+    // or an optional overlay may never redirect which executable PTC starts.
+    // The workspace overlay reads it to set `ptc-runtime.launch.executable`.
+    const childEnv: NodeJS.ProcessEnv = {
+      ...this.#childEnv(paths, sharedEnv),
+      ...browserLive?.env,
+    }
+    delete childEnv.DSH_FNOS_PTC_NODE
+    const ptcLauncher = resolvePtcLauncher(this.config.appDest, this.config.harness.executable)
+    if (ptcLauncher !== undefined) childEnv.DSH_FNOS_PTC_NODE = ptcLauncher
+
+    logger.info('harness-spawn', {
+      port,
+      entry: this.config.harness.entry,
+      browserLive: browserLive !== undefined,
+      ptcLauncherEnabled: ptcLauncher !== undefined,
+    })
     const child = spawn(this.config.harness.executable, args, {
       cwd: paths.workspace,
-      env: { ...this.#childEnv(paths, sharedEnv), ...browserLive?.env },
+      env: childEnv,
       stdio: ['ignore', 'pipe', 'pipe'],
     })
 

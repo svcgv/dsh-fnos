@@ -95,7 +95,8 @@ sudo /var/apps/dsh-fnos/cmd/main start
 | 安装被拒绝 | FPK 架构与设备不一致；x86 设备装 `amd64`，ARM 设备装 `arm64` |
 | 工作区迁移失败 | 检查 `users/<uid>/.workspace-migration.json`、旧项目目录和应用日志；不要删除原数据，修复后重试 |
 | 启动即退出 | `cmd/main start` 的 `TRIM_TEMP_LOGFILE` 与日志；确认 `nodejs_v26` 插件存在且 `/var/apps/nodejs_v26/target/bin/node` 可执行 |
-| 缺少 `libatomic.so.1` | FPK 应携带 `runtime/lib/libatomic.so.1`；重新生成并安装当前双架构包 |
+| 缺少 `libatomic.so.1`（应用无法启动） | FPK 应携带 `runtime/lib/libatomic.so.1`；重新生成并安装当前双架构包 |
+| `run_code`/PTC 工具报 `libatomic.so.1: cannot open shared object file` | PTC 子进程不继承 `LD_LIBRARY_PATH`，由 `runtime/bin/dsh-ptc-node` 注入；检查该启动器是否存在且可执行、`runtime/lib/libatomic.so.1` 是否仍在，重装当前 FPK 后重启应用 |
 | 插件安装提示 `spawn pnpm ENOENT` | 确认 0.2.1+ FPK 中存在 `runtime/bin/pnpm` 和 `runtime/pnpm/bin/pnpm.cjs`，并重启应用刷新 `PATH` |
 | 页面空白但 200 | Harness 前端产物不完整；重新打包 payload |
 | 同一用户重复启动 | 检查端口占用与 `harness-exit` 记录 |

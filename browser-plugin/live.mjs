@@ -1,12 +1,8 @@
-// Opt-in visible browser panel for one Web GUI session.
-//
-// The panel is a same-origin document-relative script injected into the served
-// index; it streams Chromium screencast frames from a private-CDP worker and
-// forwards pointer/keyboard input to the same page the Agent tools operate on.
-// Public mode accepts model navigation only after the signed-in user approves
-// each HTTPS URL. Fixture mode remains available for the fixed acceptance page.
-// No CDP socket is exposed to the client: the client speaks one small JSON
-// protocol over the authenticated upgrade.
+// Opt-in controlled browser tabs in the Web GUI's right sidebar.
+// Each tab has an independent private-CDP worker shared with its Agent tools.
+// Model-requested HTTP(S) navigation requires explicit approval; same-origin
+// page-initiated navigation remains allowed. The client uses an authenticated
+// WebSocket protocol and never receives a CDP socket.
 import { randomUUID } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
@@ -25,7 +21,9 @@ export const NETWORK_ENV = 'DSH_FNOS_BROWSER_NETWORK'
 
 const ROUTE = '/browser-live'
 const WS_ROUTE = '/browser-live/ws'
-const SCRIPT_TAG = `<script type="module" src="browser-live/panel.js"></script>`
+const CONTROL_ROUTE = '/browser-live/control'
+const MAX_CONTROL_CONNECTIONS = 32
+const CREATE_TIMEOUT_MS = 30_000
 const ASSETS = new Map([
   ['/browser-live/panel.js', ['panel.js', 'text/javascript; charset=utf-8']],
   ['/browser-live/panel.css', ['panel.css', 'text/css; charset=utf-8']],
@@ -34,6 +32,9 @@ const PANEL_DIR = new URL('./panel/', import.meta.url)
 const FIXTURE_URL = 'http://127.0.0.1:38179/'
 const FIXTURE_TITLE = '内置固定测试页'
 const PANEL_VIEWPORT = Object.freeze({ maxWidth: 1280, maxHeight: 800, quality: 60 })
+/** Sidebar tabs are cheap; each live worker is a full Chromium process, so bound both. */
+export const MAX_TABS = 6
+export const MAX_WORKERS = 3
 const MAX_SESSIONS_PAGE_OPEN = 30_000
 const MAX_TOOL_MS = 30_000
 const MAX_NAVIGATE_MS = 90_000
@@ -141,8 +142,8 @@ export function validateInput(value) {
   throw new Error('不支持的输入事件种类')
 }
 
-const FIXTURE_ACTIONS = ['open_test_site', 'snapshot', 'click', 'fill', 'screenshot', 'diagnostics']
-const NETWORK_ACTIONS = ['navigate', 'snapshot', 'click', 'fill', 'screenshot', 'diagnostics']
+const FIXTURE_ACTIONS = ['list_tabs', 'create_tab', 'open_test_site', 'snapshot', 'click', 'fill', 'screenshot', 'diagnostics']
+const NETWORK_ACTIONS = ['list_tabs', 'create_tab', 'navigate', 'snapshot', 'click', 'fill', 'screenshot', 'diagnostics']
 const TOOL_TOOL_FIELDS = Object.freeze({
   open_test_site: Object.freeze([]),
   navigate: Object.freeze(['url']),
@@ -153,7 +154,7 @@ const TOOL_TOOL_FIELDS = Object.freeze({
   diagnostics: Object.freeze([]),
 })
 const FIXTURE_DESCRIPTION = '操作界面右侧可见的内置固定测试页（用户与 AI 共用同一页面）；只支持内置页，不访问网站或任意 URL。'
-const NETWORK_DESCRIPTION = '操作界面右侧可见的受控浏览器。navigate 支持本机、局域网和公网 HTTP/HTTPS 地址，但每次导航都必须由用户查看完整 URL 后批准。'
+const NETWORK_DESCRIPTION = '操作界面右侧可见的受控浏览器。navigate 支持本机、局域网和公网 HTTP/HTTPS 地址；每次调用 navigate 均须用户查看完整 URL 后批准。同源页面跳转不会逐次审批。'
 
 export function toolSchema(mode = 'fixture') {
   if (mode !== 'fixture' && mode !== 'network') throw new Error('无效的浏览器模式')
@@ -161,7 +162,8 @@ export function toolSchema(mode = 'fixture') {
     type: 'object',
     additionalProperties: false,
     properties: {
-      action: { type: 'string', enum: mode === 'network' ? NETWORK_ACTIONS : FIXTURE_ACTIONS, description: mode === 'network' ? '受控浏览器操作' : '对内置固定测试页的操作' },
+      action: { type: 'string', enum: mode === 'network' ? NETWORK_ACTIONS : FIXTURE_ACTIONS, description: mode === 'network' ? '受控浏览器操作；list_tabs 列出当前会话的标签' : '对内置固定测试页的操作' },
+      tabId: { type: 'string', description: '除 list_tabs 和 create_tab 外必填，使用返回的标签 ID' },
       url: { type: 'string', description: '仅 navigate：需要用户批准的 HTTP 或 HTTPS URL' },
       generation: { type: 'integer', description: 'snapshot 返回的页面代次' },
       index: { type: 'integer', description: 'snapshot 返回的元素索引' },
@@ -201,8 +203,7 @@ function sendJson(connection, value) {
 }
 
 /**
- * One shared browser per plugin process: viewers and Agent tools drive the
- * same page, so frames and input stay consistent.
+ * One browser per sidebar tab: its viewers and Agent tools drive the same page.
  */
 export class LiveBrowser {
   #worker = null
@@ -217,12 +218,15 @@ export class LiveBrowser {
   #logger
   #mode
   #workerFactory
+  #slots
+  #slotHeld = false
 
-  constructor(logger, mode = 'fixture', workerFactory = startWorker) {
+  constructor(logger, mode = 'fixture', workerFactory = startWorker, slots = null) {
     if (mode !== 'fixture' && mode !== 'network') throw new Error('无效的浏览器模式')
     this.#logger = logger
     this.#mode = mode
     this.#workerFactory = workerFactory
+    this.#slots = slots
     this.#lastState = {
       open: true,
       url: mode === 'fixture' ? FIXTURE_URL : 'about:blank',
@@ -237,6 +241,7 @@ export class LiveBrowser {
   get viewerCount() { return this.#viewers.size }
   get connectionCount() { return this.#connections.size }
   get mode() { return this.#mode }
+  get state() { return { ...this.#lastState } }
 
   connect(connection) {
     if (this.#disposed) throw new Error('浏览器面板已关闭')
@@ -245,7 +250,7 @@ export class LiveBrowser {
   }
 
   disconnect(connection) {
-    this.#viewers.delete(connection)
+    this.removeViewer(connection)
     this.#connections.delete(connection)
     if (this.#connections.size === 0 && this.#permission !== null) {
       this.#permission.deny(new Error('浏览器面板已断开，访问未获批准'))
@@ -310,17 +315,27 @@ export class LiveBrowser {
     if (this.#worker !== null) return this.#worker
     if (this.#starting !== null) return this.#starting
     const starting = (async () => {
+      if (this.#slots !== null && !this.#slotHeld) { this.#slots.acquire(); this.#slotHeld = true }
       const options = this.#mode === 'network'
         ? { networkBrowser: true, livePanel: true, onEvent: event => this.#onEvent(event) }
         : { acceptanceFixture: true, livePanel: true, onEvent: event => this.#onEvent(event) }
-      const worker = this.#workerFactory(options)
+      let worker
+      try {
+        worker = this.#workerFactory(options)
+      } catch (error) {
+        this.#releaseSlot()
+        throw error
+      }
       this.#worker = worker
       try {
         if (this.#mode === 'fixture') await worker.request('open_test_site', {}, AbortSignal.timeout(MAX_SESSIONS_PAGE_OPEN))
+        if (this.#disposed || this.#worker !== worker) throw new Error('浏览器面板已关闭')
         await worker.request('live_start', { ...PANEL_VIEWPORT }, AbortSignal.timeout(MAX_SESSIONS_PAGE_OPEN))
+        if (this.#disposed || this.#worker !== worker) throw new Error('浏览器面板已关闭')
       } catch (error) {
         this.#worker = null
         await worker.stop().catch(() => {})
+        this.#releaseSlot()
         throw error
       }
       this.#screencasting = true
@@ -338,7 +353,13 @@ export class LiveBrowser {
   async addViewer(connection) {
     this.#viewers.add(connection)
     try {
-      await this.ensureWorker()
+      await this.#serialize(async () => {
+        const worker = await this.ensureWorker()
+        if (!this.#screencasting && this.#viewers.size > 0) {
+          await worker.request('live_start', { ...PANEL_VIEWPORT }, AbortSignal.timeout(MAX_SESSIONS_PAGE_OPEN))
+          this.#screencasting = true
+        }
+      })
     } catch (error) {
       this.#viewers.delete(connection)
       sendJson(connection, { type: 'error', message: `无法启动浏览器面板：${error instanceof Error ? error.message : String(error)}` })
@@ -348,7 +369,14 @@ export class LiveBrowser {
     if (this.#permission !== null) sendJson(connection, this.#permission.message)
   }
 
-  removeViewer(connection) { this.#viewers.delete(connection) }
+  removeViewer(connection) {
+    this.#viewers.delete(connection)
+    if (this.#viewers.size === 0) void this.#serialize(async () => {
+      if (this.#viewers.size !== 0 || this.#worker === null || !this.#screencasting) return
+      await this.#worker.request('live_stop', {}, AbortSignal.timeout(5_000))
+      this.#screencasting = false
+    }).catch(error => this.#logger.warn('browser-live-stop-stream-failed', { error: String(error) }))
+  }
 
   async input(value) {
     let cleaned
@@ -358,11 +386,33 @@ export class LiveBrowser {
     if (this.#worker === null) return { ok: false, error: '浏览器尚未启动' }
     if (this.#permission !== null) return { ok: false, error: '请先处理浏览器访问申请' }
     try {
-      await this.#serialize(() => this.#worker.request('live_input', cleaned, AbortSignal.timeout(15_000)))
+      await this.#serialize(() => {
+        if (this.#disposed || this.#worker === null || this.#permission !== null) throw new Error('浏览器不可输入')
+        return this.#worker.request('live_input', cleaned, AbortSignal.timeout(15_000))
+      })
       return { ok: true }
     } catch (error) {
       return { ok: false, error: error instanceof Error ? error.message : String(error) }
     }
+  }
+
+  // Only authenticated panel connections may call this directly; model calls
+  // always go through invokeTool and its explicit permission flow.
+  async userNavigate(action, url) {
+    if (this.#mode !== 'network') throw new Error('当前模式不支持导航')
+    if (this.#permission !== null) throw new Error('请先处理浏览器访问申请')
+    const fields = action === 'navigate' ? { url: normalizeBrowserUrl(url) } : { direction: action }
+    if (action !== 'navigate' && !['back', 'forward', 'reload'].includes(action)) throw new Error('无效的导航操作')
+    return this.#serialize(async () => {
+      await this.ensureWorker()
+      if (this.#permission !== null) throw new Error('请先处理浏览器访问申请')
+      const result = await this.#worker.request(action === 'navigate' ? 'navigate' : 'browser_navigation', fields, AbortSignal.timeout(MAX_TOOL_MS))
+      if (result && typeof result === 'object') {
+        this.#lastState = { ...this.#lastState, url: result.url ?? this.#lastState.url, title: result.title ?? this.#lastState.title, loading: result.loading === true }
+        this.#broadcastState()
+      }
+      return result
+    })
   }
 
   async #requestNavigationPermission(url, scope, signal) {
@@ -437,10 +487,17 @@ export class LiveBrowser {
     return result
   }
 
+  #releaseSlot() {
+    if (!this.#slotHeld) return
+    this.#slotHeld = false
+    this.#slots?.release()
+  }
+
   #retireWorker() {
     const worker = this.#worker
     this.#worker = null
     this.#screencasting = false
+    this.#releaseSlot()
     if (worker !== null) {
       worker.stop().catch(error => this.#logger.warn('browser-live-worker-stop-failed', { error: String(error) }))
     }
@@ -459,22 +516,127 @@ export class LiveBrowser {
       if (this.#screencasting) await worker.request('live_stop', {}, AbortSignal.timeout(5_000)).catch(() => {})
       await worker.stop().catch(error => { throw new Error(`浏览器 worker 未确认停止：${error instanceof Error ? error.message : String(error)}`) })
     }
+    this.#releaseSlot()
   }
 
   get screencasting() { return this.#screencasting }
 }
 
 /**
- * Register the panel routes, index injection, WebSocket upgrade and Agent
- * tools. Every registered surface is owned by the caller's effect scope.
+ * Register compatibility assets, the WebSocket upgrade and Agent tools.
+ * Every registered surface is owned by the caller's effect scope.
  */
 export async function activate(ctx, { env = process.env, load = loadHostDeps, workerFactory = startWorker } = {}) {
   const mode = liveBrowserMode(env)
   if (mode === undefined) return undefined
   const { createScope, createMcpToolDefinition } = await load()
   const logger = ctx.logger ?? { warn: () => {}, info: () => {} }
-  const browser = new LiveBrowser(logger, mode, workerFactory)
+  const tabs = new Map()
+  const controls = new Set()
+  const pendingCreates = new Map()
   const disposers = []
+  let runningWorkers = 0
+  const workerSlots = {
+    acquire() {
+      if (runningWorkers >= MAX_WORKERS) throw new Error(`同时最多运行 ${MAX_WORKERS} 个受控浏览器，请先关闭其他标签`)
+      runningWorkers += 1
+    },
+    release() { runningWorkers = Math.max(0, runningWorkers - 1) },
+  }
+  const keyOf = (sessionId, tabId) => JSON.stringify([sessionId, tabId])
+  const validId = value => typeof value === 'string' && value.length > 0 && Buffer.byteLength(value) <= 256 && !value.includes('\0')
+  function sessionAgent(sessionId) {
+    if (!validId(sessionId)) return undefined
+    const agent = ctx.agents.get(sessionId)
+    return agent?.id === sessionId && agent?.session?.id === sessionId ? agent : undefined
+  }
+  function getTab(sessionId, tabId, create = false) {
+    if (!sessionAgent(sessionId) || !validId(tabId)) throw new Error('浏览器会话或标签无效')
+    const key = keyOf(sessionId, tabId)
+    let tab = tabs.get(key)
+    if (!tab && create) {
+      if (tabs.size >= MAX_TABS) throw new Error(`受控浏览器标签最多 ${MAX_TABS} 个，请先关闭其他标签`)
+      tab = { sessionId, tabId, browser: new LiveBrowser(logger, mode, workerFactory, workerSlots) }
+      tabs.set(key, tab)
+    }
+    if (!tab) throw new Error('浏览器标签不存在')
+    return tab
+  }
+
+  // A control connection is bound to the exact live Agent object at admission.
+  // Requests are sent to one client only: broadcasting could create duplicates.
+  function controlUpgrade(req, socket, head) {
+    let admission, agent, sessionId
+    try {
+      admission = ctx.connection.admit(req)
+      const url = new URL(req.url ?? '/', 'http://localhost')
+      if (admission?.peer?.principal?.kind !== 'owner' || admission.rejection !== undefined || url.searchParams.getAll('sessionId').length !== 1) throw new Error('invalid admission')
+      sessionId = url.searchParams.get('sessionId')
+      agent = sessionAgent(sessionId)
+      if (!agent || controls.size >= MAX_CONTROL_CONNECTIONS) throw new Error('invalid session')
+    } catch { rejectUpgrade(socket, admission?.rejection ?? 403); return }
+    let connection
+    try { connection = acceptWebSocket(req, socket, head) } catch { return }
+    const control = { connection, sessionId, agent }
+    controls.add(control)
+    connection.onMessage(text => {
+      let message
+      try { message = JSON.parse(text) } catch { return }
+      if (!message || message.type !== 'create_tab_result' || typeof message.requestId !== 'string') return
+      const pending = pendingCreates.get(message.requestId)
+      if (!pending || pending.control !== control) return
+      if (sessionAgent(sessionId) !== agent || message.sessionId !== sessionId) {
+        pending.finish(new Error('浏览器会话已变化，新建结果不确定，请检查侧栏'))
+        return
+      }
+      if (message.error !== undefined) {
+        pending.finish(new Error('客户端未能新建浏览器标签，请检查侧栏'))
+        return
+      }
+      if (!validId(message.tabId) || pending.existing.has(message.tabId) || pending.claimed.has(message.tabId)) {
+        pending.finish(new Error('客户端返回的标签无效，新建结果不确定，请检查侧栏'))
+        return
+      }
+      try {
+        const tab = getTab(sessionId, message.tabId, true)
+        // Mark the ID across concurrently pending requests before settling.
+        for (const other of pendingCreates.values()) if (other.control.sessionId === sessionId) other.claimed.add(tab.tabId)
+        pending.finish(null, tab.tabId)
+      } catch (error) { pending.finish(error) }
+    })
+    connection.onClose(() => {
+      controls.delete(control)
+      for (const pending of [...pendingCreates.values()]) if (pending.control === control) pending.finish(new Error('客户端已断开，新建结果不确定，请检查侧栏'))
+    })
+  }
+
+  function createTab(agent, signal) {
+    signal.throwIfAborted()
+    const sessionId = agent.session?.id
+    if (sessionAgent(sessionId) !== agent) throw new Error('需要有效且匹配的会话')
+    if (tabs.size + pendingCreates.size >= MAX_TABS) throw new Error(`受控浏览器标签最多 ${MAX_TABS} 个，请先关闭其他标签`)
+    const control = [...controls].find(item => item.agent === agent && item.sessionId === sessionId && !item.connection.closed)
+    if (!control) throw new Error('请先连接当前会话的客户端')
+    const requestId = randomUUID()
+    return new Promise((resolve, reject) => {
+      const existing = new Set([...tabs.values()].filter(tab => tab.sessionId === sessionId).map(tab => tab.tabId))
+      const finish = (error, tabId) => {
+        if (!pendingCreates.delete(requestId)) return
+        clearTimeout(timer)
+        signal.removeEventListener('abort', onAbort)
+        error ? reject(error) : resolve(tabId)
+      }
+      const onAbort = () => finish(new Error('新建请求已取消，结果不确定，请检查侧栏'))
+      const timer = setTimeout(() => finish(new Error('新建请求超时，结果不确定，请检查侧栏')), CREATE_TIMEOUT_MS)
+      timer.unref()
+      pendingCreates.set(requestId, { control, existing, claimed: new Set(), finish })
+      signal.addEventListener('abort', onAbort, { once: true })
+      if (signal.aborted) { onAbort(); return }
+      try {
+        if (!control.connection.sendText(JSON.stringify({ type: 'create_tab', requestId, sessionId, expiresAt: Date.now() + CREATE_TIMEOUT_MS }))) finish(new Error('无法发送新建请求，请检查侧栏'))
+      } catch { finish(new Error('无法发送新建请求，请检查侧栏')) }
+    })
+  }
 
   async function servePanel(req, res) {
     const target = ASSETS.get(new URL(req.url ?? '/', 'http://x').pathname)
@@ -491,19 +653,42 @@ export async function activate(ctx, { env = process.env, load = loadHostDeps, wo
   }
 
   function upgrade(req, socket, head) {
-    let rejection
-    try { rejection = ctx.connection.requestRejection(req) } catch { rejection = 403 }
-    if (rejection !== undefined) { rejectUpgrade(socket, rejection); return }
+    // Direct upgrades bypass the Gateway. Only the authenticated owner may
+    // access these unscoped browser controls; never trust a query session ID.
+    let admission
+    try { admission = ctx.connection.admit(req) } catch { admission = { rejection: 403 } }
+    if (!admission || admission.rejection !== undefined || admission.peer?.principal?.kind !== 'owner') {
+      rejectUpgrade(socket, admission?.rejection ?? 403); return
+    }
+    let tab, created = false
+    try {
+      const url = new URL(req.url ?? '/', 'http://localhost')
+      if (url.searchParams.getAll('sessionId').length !== 1 || url.searchParams.getAll('tabId').length !== 1) throw new Error('invalid target')
+      const sessionId = url.searchParams.get('sessionId'), tabId = url.searchParams.get('tabId')
+      created = !tabs.has(keyOf(sessionId, tabId))
+      tab = getTab(sessionId, tabId, true)
+    } catch { rejectUpgrade(socket, 403); return }
+    const browser = tab.browser
     let connection
     try {
       connection = acceptWebSocket(req, socket, head)
       browser.connect(connection)
-    } catch { /* acceptWebSocket already rejected the socket */ return }
+    } catch {
+      if (connection) connection.close()
+      if (created && tabs.get(keyOf(tab.sessionId, tab.tabId)) === tab) tabs.delete(keyOf(tab.sessionId, tab.tabId))
+      return
+    }
     connection.onMessage((text) => {
       let message
       try { message = JSON.parse(text) } catch { sendJson(connection, { type: 'error', message: '消息格式无效' }); return }
       if (message === null || typeof message !== 'object' || typeof message.type !== 'string') return
-      if (message.type === 'subscribe') {
+      if (!sessionAgent(tab.sessionId) || tabs.get(keyOf(tab.sessionId, tab.tabId)) !== tab) { connection.close(); return }
+      if (message.type === 'close') {
+        tabs.delete(keyOf(tab.sessionId, tab.tabId))
+        void browser.dispose().catch(error => logger.warn('browser-live-dispose-failed', { error: String(error) }))
+      } else if (['navigate', 'back', 'forward', 'reload'].includes(message.type)) {
+        browser.userNavigate(message.type, message.url).catch(error => sendJson(connection, { type: 'error', message: String(error?.message ?? error) }))
+      } else if (message.type === 'subscribe') {
         browser.addViewer(connection).catch(error => sendJson(connection, { type: 'error', message: String(error?.message ?? error) }))
       } else if (message.type === 'unsubscribe') {
         browser.removeViewer(connection)
@@ -518,7 +703,7 @@ export async function activate(ctx, { env = process.env, load = loadHostDeps, wo
 
   disposers.push(ctx.webServer.register({ kind: 'prefix', path: ROUTE, handler: servePanel }))
   disposers.push(ctx.webServer.registerUpgrade({ path: WS_ROUTE, handler: upgrade }))
-  disposers.push(ctx.webServer.tapIndex(html => html.includes('browser-live/panel.js') ? html : html.replace(/<\/body>/i, `${SCRIPT_TAG}</body>`)))
+  disposers.push(ctx.webServer.registerUpgrade({ path: CONTROL_ROUTE, handler: controlUpgrade }))
 
   const owners = new Map()
   function liveAgent(agent) {
@@ -528,6 +713,15 @@ export async function activate(ctx, { env = process.env, load = loadHostDeps, wo
     const owner = owners.get(agent)
     if (!owner) return
     owners.delete(agent)
+    for (const control of [...controls]) {
+      if (control.agent !== agent) continue
+      control.connection.close()
+    }
+    for (const [key, tab] of tabs) {
+      if (tab.sessionId !== agent.session?.id) continue
+      tabs.delete(key)
+      void tab.browser.dispose().catch(error => logger.warn('browser-live-dispose-failed', { error: String(error) }))
+    }
     try { await owner.scope.dispose() } catch (error) { logger.warn('browser-live-agent-dispose-failed', { error: String(error) }) }
   }
   async function attach(agent) {
@@ -544,7 +738,21 @@ export async function activate(ctx, { env = process.env, load = loadHostDeps, wo
         inputSchema: toolSchema(mode),
         async call(args, exec) {
           if (exec?.agent !== agent || exec.signal === undefined) throw new Error('需要有效且匹配的 Agent 调用')
-          const result = await browser.invokeTool(args, exec.signal)
+          const sessionId = exec.agent.session?.id
+          if (!sessionAgent(sessionId) || sessionAgent(sessionId) !== agent) throw new Error('需要有效且匹配的会话')
+          if (args?.action === 'create_tab') {
+            if (Object.keys(args).some(key => key !== 'action')) throw new Error('无效的操作参数')
+            const tabId = await createTab(agent, exec.signal)
+            if (sessionAgent(sessionId) !== agent || agent.session?.id !== sessionId) throw new Error('浏览器会话已变化，新建结果不确定，请检查侧栏')
+            return { content: [{ type: 'text', text: JSON.stringify({ tabId }) }] }
+          }
+          if (args?.action === 'list_tabs') {
+            if (Object.keys(args).some(key => key !== 'action')) throw new Error('无效的操作参数')
+            return { content: [{ type: 'text', text: JSON.stringify({ tabs: [...tabs.values()].filter(tab => tab.sessionId === sessionId).map(tab => ({ tabId: tab.tabId, ...tab.browser.state })) }) }] }
+          }
+          const { tabId, ...fields } = args ?? {}
+          const tab = getTab(sessionId, tabId)
+          const result = await tab.browser.invokeTool(fields, exec.signal)
           if (args.action === 'screenshot') {
             if (result?.mime !== 'image/png' || typeof result.base64 !== 'string' || result.base64.length > 16 * 1024 * 1024) throw new Error('截图格式无效')
             return { content: [{ type: 'image', mimeType: 'image/png', data: result.base64 }] }
@@ -561,13 +769,15 @@ export async function activate(ctx, { env = process.env, load = loadHostDeps, wo
 
   ctx.effect(() => () => {
     for (const dispose of disposers.splice(0)) { try { dispose() } catch { /* disposers must not throw */ } }
+    for (const control of [...controls]) control.connection.close()
     for (const agent of [...owners.keys()]) void detach(agent)
-    void browser.dispose().catch(error => logger.warn('browser-live-dispose-failed', { error: String(error) }))
+    for (const tab of tabs.values()) void tab.browser.dispose().catch(error => logger.warn('browser-live-dispose-failed', { error: String(error) }))
+    tabs.clear()
   }, 'dsh-fnos-browser-live')
 
   ctx.on('agent/created', ({ agent }) => { void attach(agent).catch(error => logger.warn('browser-live-attach-failed', { error: String(error) })) })
   for (const agent of ctx.agents.list()) await attach(agent)
-  return { browser }
+  return { tabs }
 }
 
 /** Cordis entry; never return the runtime as the plugin's resolved value. */

@@ -14,6 +14,7 @@ import { assertFixtureControl, createFixtureControl, fixtureUrl } from './fixtur
 import { cleanupOwnedResources, createOwnedGroupRegistry } from './process-groups.mjs'
 import { createLivePanel } from './live-panel.mjs'
 import { normalizeBrowserUrl } from './browser-url.mjs'
+import { historyTarget, historyAvailability } from './browser-history.mjs'
 
 const root = '/vol1/@appcenter/fygo-browser/app/vendor/runtime'
 const executable = `${root}/usr/lib/chromium/chromium`
@@ -247,6 +248,22 @@ async function execute(request) {
       try { finalOrigin = new URL(finalUrl).origin } catch { finalOrigin = undefined }
       if (finalOrigin !== navigationOrigin) fail('页面跳转到了未获批准的其他网站，已停止')
       return { url: finalUrl, title: typeof state?.title === 'string' ? state.title : '', loading: state?.ready === 'loading' }
+    }
+    case 'browser_navigation': {
+      if (!networkMode) fail('当前浏览器模式不允许网络导航')
+      if (Object.keys(request).some(key => !['id', 'op', 'direction'].includes(key)) || !['back', 'forward', 'reload'].includes(request.direction)) fail('浏览器导航请求无效')
+      // Never grant a history entry a broader scheme or redirect policy than a
+      // typed URL. In particular, Chromium's initial about:blank is not revisited.
+      const entry = historyTarget(await call('Page.getNavigationHistory'), request.direction)
+      navigationOrigin = new URL(entry.url).origin
+      topFrameId = (await call('Page.getFrameTree')).frameTree.frame.id
+      if (request.direction === 'reload') await call('Page.reload')
+      else await call('Page.navigateToHistoryEntry', { entryId: entry.id })
+      return { url: entry.url, title: entry.title, loading: true }
+    }
+    case 'browser_history': {
+      if (!networkMode || Object.keys(request).some(key => !['id', 'op'].includes(key))) fail('浏览器历史请求无效')
+      return historyAvailability(await call('Page.getNavigationHistory'))
     }
     case 'snapshot': {
       const elements = await evaluate(`(globalThis[${JSON.stringify(snapshotKey)}]=${query}).map((e,i)=>({index:i,tag:e.tagName.toLowerCase(),text:e.tagName==='INPUT'&&e.type==='password'?'[REDACTED]':(e.innerText||e.value||e.getAttribute('aria-label')||'').slice(0,200)}))`)
