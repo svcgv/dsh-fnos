@@ -1,0 +1,56 @@
+test/server.test.ts
+  s_d4bc4156f928d7::t_f805cbd56025a4 202-216
+test/runtime-start.test.mjs
+  s_990b7d77f9c7d1::t_a231bab7a92435 1-31
+docs/architecture.md
+  s_d4bc4156f928d7::t_e73541902afadd 21
+packaging/fpk/cmd/main
+  s_990b7d77f9c7d1::t_6fabb9d5400d74 64-66
+test/fixtures/mock-harness.mjs
+  s_d4bc4156f928d7::t_f805cbd56025a4 90
+src/harness.ts
+  s_d4bc4156f928d7::t_e73541902afadd 177-179
+browser-plugin/live-tabs.test.mjs
+  s_ba61927eb0123b::t_1428c6f8b862cf 29,33,41,67-96
+  s_ba61927eb0123b::t_7d7a93c3ea4f02 97
+browser-plugin/live.mjs
+  s_ba61927eb0123b::t_af5a564a051c98 215,250,254-263,265-271,767-768,770
+  s_ba61927eb0123b::t_a5affbf209779e 264,529
+scripts/package.mjs
+  s_990b7d77f9c7d1::t_fd206b4042e55b 1,111-119
+  s_990b7d77f9c7d1::t_953b838a66bbdb 107-109,124
+README.md
+  s_d4bc4156f928d7::t_98c02f148e8e6a 20,122
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "54a7d056e8f80ac05846231bb77c111a44b40029",
+  "prompts": {},
+  "sessions": {
+    "s_990b7d77f9c7d1": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a21ad2-3e29-7f42-81a1-578a88ac9cd8",
+        "model": "gpt-6.1-terra"
+      },
+      "human_author": "svcgv <hb1230123@hotmail.com>"
+    },
+    "s_ba61927eb0123b": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a21ad2-3e29-7f91-9dd9-bb28084d5011",
+        "model": "gpt-6.1-terra"
+      },
+      "human_author": "svcgv <hb1230123@hotmail.com>"
+    },
+    "s_d4bc4156f928d7": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a21ad2-3e29-7dc0-931f-dddf3c597c24",
+        "model": "gpt-6.1-terra"
+      },
+      "human_author": "svcgv <hb1230123@hotmail.com>"
+    }
+  }
+}
