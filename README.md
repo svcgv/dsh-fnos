@@ -17,7 +17,7 @@
         ▼
   dsh-fnos server（包用户，Unix Socket app.sock）
   ├── 单工作区解析 / 旧项目迁移
-  ├── Harness 实例管理（按 uid 启动、空闲回收）
+  ├── Harness 实例管理（按 uid 启动与管理）
   └── 反向代理（HTTP + WebSocket，/workspace/）
         │  127.0.0.1:<随机端口>，Host 重写
         ▼
@@ -119,7 +119,7 @@ GitHub Actions 的 `build-fpk` 工作流会用 `ubuntu-24.04` 与 `ubuntu-24.04-
 - 共享插件通过 profile 软链提供默认集合；用户工作区仍可在 Harness 插件页安装自己的插件。
 - FPK 内置 pnpm `10.34.9`，插件安装不依赖宿主自行安装 pnpm。
 - 卸载时可选择保留数据（默认）或永久清空全部工作区、配置和日志残留。
-- 单实例模型：同一飞牛用户在 PC 与手机共用同一个 Harness 进程；空闲 30 分钟后回收。
+- 单实例模型：同一飞牛用户在 PC 与手机共用同一个 Harness 进程；进程持续运行至应用停止或进程自行退出，避免后台任务被空闲计时中断。
 - 未开放 Harness 的分享、配对与 API 令牌登录。
 - Harness payload 取自 npm 发布版，体积约 1 GB；应用依赖飞牛商店 `nodejs_v26` 插件，不内置完整 Node 运行时。
 - 发布提供 amd64 与 arm64 两个独立 FPK；因包含 libatomic 和 Harness 原生依赖，不使用 `platform=all` 合并包。

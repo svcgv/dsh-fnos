@@ -75,19 +75,11 @@ async function listen(): Promise<void> {
 
 await listen()
 
-const reaper = setInterval(() => {
-  void harness.reapIdle().catch((error: unknown) => {
-    logger.warn('idle-reap-failed', { error: error instanceof Error ? error.message : String(error) })
-  })
-}, 60_000)
-reaper.unref()
-
 let stopping = false
 async function shutdown(signal: string): Promise<void> {
   if (stopping) return
   stopping = true
   logger.info('shutdown', { signal })
-  clearInterval(reaper)
   await new Promise<void>((resolve) => server.close(() => resolve()))
   await acceptance?.stopAll()
   await harness.stopAll()

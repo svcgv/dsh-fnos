@@ -1,4 +1,4 @@
-import { chmod, cp, mkdir, readFile, readdir, writeFile } from 'node:fs/promises'
+import { chmod, cp, mkdir, mkdtemp, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -104,14 +104,24 @@ export async function packageFpk(options) {
   if (!existsSync(produced)) throw new Error(`fnpack did not create ${produced}`)
 
   const artifact = join(root, 'dist', `dsh-fnos-${packageJson.version}-linux-${target.id}.fpk`)
+  // Verify before publishing to dist: an interrupted or malformed fnpack output
+  // must not replace a previously valid artifact with the same release name.
+  const summary = options.allowMissingPayload ? undefined : await verifyFpk(produced, target.id)
   await mkdir(join(root, 'dist'), { recursive: true })
-  await cp(produced, artifact)
-  await chmod(artifact, 0o644)
+  const publishDir = await mkdtemp(join(root, 'dist', '.fpk-'))
+  try {
+    const stagedArtifact = join(publishDir, 'artifact.fpk')
+    await cp(produced, stagedArtifact)
+    await chmod(stagedArtifact, 0o644)
+    await rename(stagedArtifact, artifact)
+  } finally {
+    await rm(publishDir, { recursive: true, force: true })
+  }
   if (options.allowMissingPayload) {
     console.warn('package: development artifact produced; strict release verification was skipped')
     return { artifact, summary: undefined }
   }
-  const summary = await verifyFpk(artifact, target.id)
+  summary.file = artifact
   console.log(`package: ${artifact}`)
   console.log(`package: sha256 ${summary.sha256}`)
   return { artifact, summary }

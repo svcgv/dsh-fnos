@@ -87,7 +87,7 @@ server.on('upgrade', (req, socket) => {
 server.listen(port, '127.0.0.1', () => {
   const address = server.address()
   const actual = typeof address === 'object' && address !== null ? address.port : port
-  console.log(`dsh web: http://127.0.0.1:${actual}/?token=${TOKEN}`)
+  setTimeout(() => console.log(`dsh web: http://127.0.0.1:${actual}/?token=${TOKEN}`), Number(process.env.MOCK_START_DELAY_MS ?? 0))
 })
 
 for (const signal of ['SIGTERM', 'SIGINT']) {

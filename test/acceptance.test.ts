@@ -93,7 +93,6 @@ function testConfig(appName = 'dsh-fnos'): AppConfig {
     listenPort: undefined,
     harness: { entry: '/nonexistent/entry.mjs', executable: process.execPath, profile: 'web', extraArgs: [] },
     devUid: undefined,
-    idleStopMs: 60_000,
     startTimeoutMs: 20_000,
   }
 }

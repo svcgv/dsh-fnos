@@ -104,7 +104,6 @@ async function openWorkspace(
 ): Promise<{ instance: HarnessInstance; target: ProxyTarget }> {
   const workspace = await deps.store.ensure(identity.uid)
   const instance = await deps.harness.ensure(identity.uid, workspace)
-  deps.harness.touch(instance.key)
 
   return {
     instance,

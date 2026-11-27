@@ -40,7 +40,6 @@ async function startHarness(sharedEnv = 'MOCK_SHARED=shared-yes\n'): Promise<Har
     listenPort: undefined,
     harness: { entry: fixture, executable: process.execPath, profile: 'web', extraArgs: [] },
     devUid: undefined,
-    idleStopMs: 60_000,
     startTimeoutMs: 20_000,
   }
 
@@ -196,6 +195,21 @@ test('WebSocket upgrades use the single workspace route', { timeout: 30_000 }, a
       socket.on('error', reject)
     })
     assert.match(status, /101/u)
+  } finally {
+    await harness.close()
+  }
+})
+
+
+test('concurrent workspace requests wait for the same ready Harness', { timeout: 30_000 }, async () => {
+  const harness = await startHarness('MOCK_START_DELAY_MS=500\n')
+  try {
+    const first = fetch(`${harness.base}/workspace/`, { headers: headers('1000') })
+    // Allow the child to spawn while its token is deliberately delayed.
+    await new Promise((resolve) => setTimeout(resolve, 250))
+    const responses = await Promise.all([first, ...Array.from({ length: 5 }, () =>
+      fetch(`${harness.base}/workspace/`, { headers: headers('1000') }))])
+    assert.deepEqual(responses.map((response) => response.status), Array(6).fill(200))
   } finally {
     await harness.close()
   }

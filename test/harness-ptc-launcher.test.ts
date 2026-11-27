@@ -98,7 +98,6 @@ async function createManager(
     listenPort: undefined,
     harness: { entry: fixture, executable: process.execPath, profile: 'web', extraArgs: [] },
     devUid: undefined,
-    idleStopMs: 60_000,
     startTimeoutMs: 20_000,
   }
   const store = new WorkspaceStore({ homeRoot: pkgHome })

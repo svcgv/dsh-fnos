@@ -34,7 +34,6 @@ async function createManager(options: { withOverlay?: boolean } = {}): Promise<{
     listenPort: undefined,
     harness: { entry: fixture, executable: process.execPath, profile: 'web', extraArgs: [] },
     devUid: undefined,
-    idleStopMs: 60_000,
     startTimeoutMs: 20_000,
   }
 

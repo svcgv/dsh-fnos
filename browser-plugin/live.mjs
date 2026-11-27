@@ -212,6 +212,7 @@ export class LiveBrowser {
   #tail = Promise.resolve()
   #disposed = false
   #connections = new Set()
+  #connectionWaiters = new Set()
   #viewers = new Set()
   #permission = null
   #lastState
@@ -246,7 +247,26 @@ export class LiveBrowser {
   connect(connection) {
     if (this.#disposed) throw new Error('浏览器面板已关闭')
     this.#connections.add(connection)
+    for (const ready of this.#connectionWaiters) ready()
     if (this.#permission !== null) sendJson(connection, this.#permission.message)
+  }
+
+  waitForConnection(signal) {
+    signal.throwIfAborted()
+    if (this.#disposed) return Promise.reject(new Error('浏览器面板已关闭'))
+    if (this.#connections.size > 0) return Promise.resolve()
+    return new Promise((resolve, reject) => {
+      const finish = error => {
+        this.#connectionWaiters.delete(ready)
+        signal.removeEventListener('abort', aborted)
+        error ? reject(error) : resolve()
+      }
+      const ready = error => finish(error)
+      const aborted = () => finish(new Error('等待浏览器面板连接失败，请检查侧栏'))
+      this.#connectionWaiters.add(ready)
+      signal.addEventListener('abort', aborted, { once: true })
+      if (signal.aborted) aborted()
+    })
   }
 
   disconnect(connection) {
@@ -506,6 +526,7 @@ export class LiveBrowser {
   async dispose() {
     if (this.#disposed) return
     this.#disposed = true
+    for (const ready of this.#connectionWaiters) ready(new Error('浏览器面板已关闭'))
     this.#permission?.deny(new Error('浏览器面板已关闭'))
     for (const connection of this.#connections) { try { connection.close() } catch { /* ignore */ } }
     this.#connections.clear()
@@ -743,7 +764,10 @@ export async function activate(ctx, { env = process.env, load = loadHostDeps, wo
           if (args?.action === 'create_tab') {
             if (Object.keys(args).some(key => key !== 'action')) throw new Error('无效的操作参数')
             const tabId = await createTab(agent, exec.signal)
+            const tab = getTab(sessionId, tabId)
+            await tab.browser.waitForConnection(AbortSignal.any([exec.signal, AbortSignal.timeout(CREATE_TIMEOUT_MS)]))
             if (sessionAgent(sessionId) !== agent || agent.session?.id !== sessionId) throw new Error('浏览器会话已变化，新建结果不确定，请检查侧栏')
+            if (tabs.get(keyOf(sessionId, tabId)) !== tab) throw new Error('浏览器标签已关闭，请检查侧栏')
             return { content: [{ type: 'text', text: JSON.stringify({ tabId }) }] }
           }
           if (args?.action === 'list_tabs') {

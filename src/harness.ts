@@ -23,7 +23,6 @@ export interface HarnessInstance {
   cookie: string | undefined
   /** Startup URL carrying the one-time token, kept for re-authentication. */
   tokenUrl: string | undefined
-  lastUsed: number
   exited: boolean
 }
 
@@ -175,23 +174,17 @@ export class HarnessManager {
   /** Return a ready instance, starting one on demand. */
   async ensure(uid: string, workspace: Workspace): Promise<HarnessInstance> {
     const key = uid
-    const running = this.#instances.get(key)
-    if (running !== undefined && !running.exited) {
-      running.lastUsed = Date.now()
-      return running
-    }
-
     const pending = this.#starting.get(key)
     if (pending !== undefined) return pending
+
+    const running = this.#instances.get(key)
+    if (running !== undefined && !running.exited) {
+      return running
+    }
 
     const start = this.#start(uid, workspace, key).finally(() => this.#starting.delete(key))
     this.#starting.set(key, start)
     return start
-  }
-
-  touch(key: string): void {
-    const instance = this.#instances.get(key)
-    if (instance !== undefined) instance.lastUsed = Date.now()
   }
 
   /** Re-mint the Harness cookie after an upstream 401. */
@@ -215,16 +208,6 @@ export class HarnessManager {
     const instances = [...this.#instances.values()]
     this.#instances.clear()
     await Promise.all(instances.map((instance) => this.#terminate(instance)))
-  }
-
-  /** Stop instances that exceeded the idle window. */
-  async reapIdle(now = Date.now()): Promise<void> {
-    for (const [key, instance] of this.#instances) {
-      if (now - instance.lastUsed < this.config.idleStopMs) continue
-      this.#instances.delete(key)
-      this.logger.info('harness-idle-stop', { key })
-      await this.#terminate(instance)
-    }
   }
 
   #childEnv(paths: WorkspacePaths, sharedEnv: Record<string, string>): NodeJS.ProcessEnv {
@@ -328,7 +311,6 @@ export class HarnessManager {
       child,
       cookie: undefined,
       tokenUrl: undefined,
-      lastUsed: Date.now(),
       exited: false,
     }
     this.#instances.set(key, instance)

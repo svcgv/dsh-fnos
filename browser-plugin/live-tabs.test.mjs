@@ -26,11 +26,11 @@ const tick = () => new Promise(resolve => setImmediate(resolve))
 
 test('tabs isolate workers, sessions, approvals and close', async () => {
   const agents = ['a', 'b'].map(id => ({ id, session: { id } }))
-  const tools = new Map(); let upgrade; const workers = []
+  const tools = new Map(); const upgrades = new Map(); const workers = []
   const ctx = {
     logger: { warn() {} }, connection: { admit: req => req.deny ? { peer: { principal: { kind: 'viewer' } } } : { peer: { principal: { kind: 'owner' } } } },
     agents: { get: id => agents.find(a => a.id === id), list: () => agents },
-    webServer: { register: () => () => {}, registerUpgrade: x => { upgrade = x.handler; return () => {} } },
+    webServer: { register: () => () => {}, registerUpgrade: x => { upgrades.set(x.path, x.handler); return () => {} } },
     effect() {}, on() {},
   }
   const load = async () => ({ createScope: (_, agent) => ({ ctx: { effect() {}, tools: { register: tool => tools.set(agent.id, tool) } }, dispose: async () => {} }), createMcpToolDefinition: (_, def) => def })
@@ -38,7 +38,7 @@ test('tabs isolate workers, sessions, approvals and close', async () => {
   const runtime = await activate(ctx, { env: { DSH_FNOS_BROWSER_LIVE: '1', DSH_FNOS_BROWSER_NETWORK: '1' }, load, workerFactory })
   function connect(sessionId, tabId, deny = false) {
     const socket = new Socket()
-    upgrade({ url: `/browser-live/ws?sessionId=${sessionId}&tabId=${tabId}`, headers: { 'sec-websocket-key': Buffer.alloc(16).toString('base64'), 'sec-websocket-version': '13' }, deny }, socket, Buffer.alloc(0))
+    upgrades.get('/browser-live/ws')({ url: `/browser-live/ws?sessionId=${sessionId}&tabId=${tabId}`, headers: { 'sec-websocket-key': Buffer.alloc(16).toString('base64'), 'sec-websocket-version': '13' }, deny }, socket, Buffer.alloc(0))
     return socket
   }
   const rejected = connect('a', 'bad', true)
@@ -63,4 +63,35 @@ test('tabs isolate workers, sessions, approvals and close', async () => {
   assert.equal(runtime.tabs.size, 2)
   await assert.rejects(tools.get('a').call({ action: 'snapshot', tabId: 'one' }, exec), /标签不存在/)
   two.message({ type: 'close' }); other.message({ type: 'close' }); await tick()
+})
+
+test('model-created tab becomes usable only after its sidebar connection arrives', async () => {
+  const agent = { id: 'a', session: { id: 'a' } }; let tool
+  const upgrades = new Map()
+  const ctx = {
+    logger: { warn() {} }, connection: { admit: () => ({ peer: { principal: { kind: 'owner' } } }) },
+    agents: { get: id => id === 'a' ? agent : undefined, list: () => [agent] },
+    webServer: { register: () => () => {}, registerUpgrade: x => { upgrades.set(x.path, x.handler); return () => {} } }, effect() {}, on() {},
+  }
+  const load = async () => ({ createScope: () => ({ ctx: { effect() {}, tools: { register: value => { tool = value } } }, dispose: async () => {} }), createMcpToolDefinition: (_, def) => def })
+  const workerFactory = () => ({ async request(op, fields) { return op === 'navigate' ? { url: fields.url } : {} }, async stop() {} })
+  await activate(ctx, { env: { DSH_FNOS_BROWSER_LIVE: '1', DSH_FNOS_BROWSER_NETWORK: '1' }, load, workerFactory })
+  const connect = (path, query) => { const socket = new Socket(); upgrades.get(path)({ url: `${path}?${query}`, headers: { 'sec-websocket-key': Buffer.alloc(16).toString('base64'), 'sec-websocket-version': '13' } }, socket, Buffer.alloc(0)); return socket }
+  const control = connect('/browser-live/control', 'sessionId=a')
+  const exec = { agent, signal: AbortSignal.timeout(5000) }
+  let settled = false
+  const creation = tool.call({ action: 'create_tab' }, exec).then(value => { settled = true; return value })
+  const request = control.messages().find(m => m.type === 'create_tab')
+  control.message({ type: 'create_tab_result', requestId: request.requestId, sessionId: 'a', tabId: 'new' })
+  await tick()
+  assert.equal(settled, false, 'creation must wait for the panel connection')
+  const panel = connect('/browser-live/ws', 'sessionId=a&tabId=new')
+  assert.equal(JSON.parse((await creation).content[0].text).tabId, 'new')
+  const navigation = tool.call({ action: 'navigate', tabId: 'new', url: 'https://example.com/' }, exec)
+  await tick(); await tick()
+  const permission = panel.messages().find(m => m.type === 'permission')
+  assert.ok(permission)
+  panel.message({ type: 'permission-response', requestId: permission.requestId, allow: true })
+  assert.equal(JSON.parse((await navigation).content[0].text).url, 'https://example.com/')
+  panel.message({ type: 'close' }); control.destroy()
 })

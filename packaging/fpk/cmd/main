@@ -61,12 +61,9 @@ pick_node() {
 
 prepare_runtime() {
     export PATH="${RUNTIME_BIN}:${NODE_APP_BIN}:${PATH:-}"
-    if [ -d "${RUNTIME_LIB}" ]; then
-        case ":${LD_LIBRARY_PATH:-}:" in
-            *":${RUNTIME_LIB}:"*) ;;
-            *) export LD_LIBRARY_PATH="${RUNTIME_LIB}${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}" ;;
-        esac
-    fi
+    [ -r "${RUNTIME_LIB}/libatomic.so.1" ] || fail "应用文件不完整：缺少或无法读取 ${RUNTIME_LIB}/libatomic.so.1，请重新安装完整 FPK"
+    # Always put the bundled library first, even if it already appears later.
+    export LD_LIBRARY_PATH="${RUNTIME_LIB}${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}"
 }
 
 read_pid() {

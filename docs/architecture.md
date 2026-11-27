@@ -18,7 +18,7 @@
 | 配置 | 解析 `TRIM_*` 与开发覆盖 | `src/config.ts` |
 | 身份 | 只从 `x-trim-userid` 取身份，校验数字格式 | `src/identity.ts` |
 | 工作区存储 | 单工作区解析、旧项目迁移、路径约束 | `src/workspaces.ts` |
-| 实例管理 | 每个 uid 使用 `nodejs_v26` 启动一个 `dsh`、解析 token、持有 Cookie、空闲回收 | `src/harness.ts` |
+| 实例管理 | 每个 uid 使用 `nodejs_v26` 启动一个 `dsh`、解析 token、持有 Cookie、管理进程生命周期 | `src/harness.ts` |
 | 反向代理 | HTTP/WS 转发、Header 重写、Cookie 隔离、Location 改写 | `src/proxy.ts` |
 | HTTP 层 | 路由、静态 UI、JSON API、权限判断 | `src/server.ts` |
 | 入口 | 监听 Unix Socket、优雅退出 | `src/index.ts` |
