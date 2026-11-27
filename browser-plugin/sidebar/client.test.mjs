@@ -61,6 +61,40 @@ test('multi-instance type and session-scoped websocket identity', async () => {
   b.dispose()
 })
 
+test('permission dialog supplies a readable foreground for its opaque fallback background', async () => {
+  const react = {
+    createElement: (type, props, ...children) => ({ type, props: props || {}, children }),
+    useMemo: fn => fn(), useSyncExternalStore: (_, get) => get(),
+    useState: initial => [initial, () => {}], useCallback: fn => fn, useEffect: () => {}
+  }
+  const f = await fixture(react)
+  const controller = f.inject('session').controller('tab')
+  controller.start(); f.sockets[0].open()
+  f.sockets[0].onmessage({ data: JSON.stringify({ type: 'permission', requestId: 'r', url: 'https://example.com/' }) })
+  const tree = f.body({ useTabInfo: () => ({ tab: { id: 'tab', visible: true, actions: {} } }), controller: () => controller, t: x => x })
+  const css = tree.children[0].children[0]
+  const permissionRule = css.match(/\.dfb-permission\{([^}]*)\}/)?.[1]
+  assert.match(permissionRule, /(?:^|;)color: *#171717(?:;|$)/, 'the permission foreground must not inherit white from a dark host')
+  assert.match(permissionRule, /(?:^|;)background: *#fff(?:;|$)/)
+  const dialog = tree.children[2].children[2]
+  assert.equal(dialog.props['aria-labelledby'], 'dfb-permission-title')
+  assert.equal(dialog.props['aria-describedby'], 'dfb-permission-hint')
+  const card = dialog.children[0]
+  assert.equal(card.children[0].children[0], 'permission')
+  assert.equal(card.children[0].props.id, 'dfb-permission-title')
+  assert.equal(card.children[1].children[0], 'https://example.com/')
+  assert.equal(card.children[2].children[0], 'permissionHint')
+  assert.equal(card.children[2].props.id, 'dfb-permission-hint')
+  assert.deepEqual(card.children[3].children.map(button => button.children[0]), ['deny', 'allow'])
+  assert.equal(card.children[3].children[1].props.autoFocus, true)
+  assert.match(css, /\.dfb-permission-url\{[^}]*overflow-wrap:anywhere/)
+  assert.match(css, /@container \(max-width: 360px\)/)
+  assert.match(css, /@media \(max-width:600px\),\(pointer:coarse\)/)
+  assert.match(css, /min-height:48px!important/)
+  assert.match(css, /prefers-reduced-motion:no-preference/)
+  controller.dispose()
+})
+
 test('address bar adds https and reports invalid addresses', async () => {
   let cursor = 0
   const hooks = []
