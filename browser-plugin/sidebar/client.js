@@ -6,6 +6,7 @@ window.__ModuleLoader__.load({
     const h = React.createElement
     const ID = '@dsh-fnos/controlled-browser-sidebar'
     const KIND = 'controlled-browser'
+    const IDENTITY_STORAGE = 'dsh-fnos.controlled-browser.tab-identities.v1'
     const copy = {
       en: { title: 'Controlled browser', new: 'New controlled browser', description: 'View and control an agent browser', address: 'HTTP or HTTPS address', go: 'Go', back: 'Back', forward: 'Forward', reload: 'Reload', connecting: 'Connecting…', connected: 'Connected', retry: 'Reconnecting…', waiting: 'Waiting for a browser frame', permission: 'Allow the agent to visit this address?', permissionHint: 'Review the full address. Approval applies to this visit only, and the agent will be able to read and interact with the page.', allow: 'Allow this visit', deny: 'Deny', disconnected: 'Disconnected', canvas: 'Remote browser view', invalidAddress: 'Enter a valid HTTP or HTTPS address without credentials' },
       zh: { title: '受控浏览器', new: '新建受控浏览器', description: '查看并操作智能体浏览器', address: 'HTTP 或 HTTPS 地址', go: '前往', back: '后退', forward: '前进', reload: '刷新', connecting: '连接中…', connected: '已连接', retry: '正在重连…', waiting: '等待浏览器画面', permission: '允许智能体访问此地址？', permissionHint: '请核对完整地址。仅允许本次访问；批准后，智能体可以读取并操作该页面。', allow: '允许本次访问', deny: '拒绝', disconnected: '连接断开', canvas: '远端浏览器画面', invalidAddress: '请输入不含账号密码的有效 HTTP 或 HTTPS 地址' }
@@ -39,7 +40,90 @@ window.__ModuleLoader__.load({
     }
     // The public openTab returns void. Compare the synchronously committed inventory
     // and require the unique new record to also be active; never guess an identity.
-    function createSessionControl(sidebar) {
+    function openLocalTab(sidebar, owner) {
+      const before = new Set(sidebar.openTabs.getSnapshot().filter(item => item.sessionId === owner).map(item => item.tabId))
+      if (sidebar.mounted.getSnapshot() !== owner) throw Error('Session changed')
+      sidebar.openTab(KIND)
+      if (sidebar.mounted.getSnapshot() !== owner) throw Error('Session changed')
+      const added = sidebar.openTabs.getSnapshot().filter(item => item.sessionId === owner && item.kind === KIND && !before.has(item.tabId))
+      const active = sidebar.active()
+      if (added.length !== 1 || !active || active.kind !== KIND || active.id !== added[0].tabId) throw Error('Unable to identify the created tab')
+      return active.id
+    }
+
+    // A device may use different local sidebar ids from the device that created
+    // the host tab. Persist only that routing map; page content never enters it.
+    function createIdentity(sidebar, closeLocal) {
+      const byLocal = new Map(), byRemote = new Map()
+      const key = (session, tab) => JSON.stringify([session, tab])
+      const valid = value => typeof value === 'string' && value.length > 0 && value.length <= 256 && !value.includes('\0')
+      try {
+        const saved = JSON.parse(localStorage.getItem(IDENTITY_STORAGE) || '[]')
+        if (Array.isArray(saved)) for (const item of saved.slice(0, 256)) {
+          if (!item || !valid(item.sessionId) || !valid(item.localId) || !valid(item.remoteId)) continue
+          const localKey = key(item.sessionId, item.localId), remoteKey = key(item.sessionId, item.remoteId)
+          if (byLocal.has(localKey) || byRemote.has(remoteKey)) continue
+          byLocal.set(localKey, { sessionId: item.sessionId, localId: item.localId, remoteId: item.remoteId, known: item.known === true })
+          byRemote.set(remoteKey, item.localId)
+        }
+      } catch { /* unavailable or invalid storage starts with device-local ids */ }
+      const persist = () => {
+        try { localStorage.setItem(IDENTITY_STORAGE, JSON.stringify([...byLocal.values()].map(({ sessionId, localId, remoteId, known }) => ({ sessionId, localId, remoteId, known })))) } catch { /* routing still works for this window */ }
+      }
+      const forgetLocal = (sessionId, localId) => {
+        const localKey = key(sessionId, localId), item = byLocal.get(localKey)
+        if (!item) return
+        byLocal.delete(localKey); byRemote.delete(key(sessionId, item.remoteId)); persist()
+      }
+      const forgetRemote = (sessionId, remoteId) => {
+        const remoteKey = key(sessionId, remoteId), localId = byRemote.get(remoteKey)
+        if (localId !== undefined) forgetLocal(sessionId, localId)
+      }
+      const bind = (sessionId, localId, remoteId, known = false) => {
+        const localKey = key(sessionId, localId), remoteKey = key(sessionId, remoteId)
+        const previous = byLocal.get(localKey)
+        if (previous && previous.remoteId !== remoteId) byRemote.delete(key(sessionId, previous.remoteId))
+        const other = byRemote.get(remoteKey)
+        if (other !== undefined && other !== localId) forgetLocal(sessionId, other)
+        const item = { sessionId, localId, remoteId, known: known || previous?.known === true }
+        byLocal.set(localKey, item); byRemote.set(remoteKey, localId); persist()
+        return item
+      }
+      const markKnown = (sessionId, remoteId) => {
+        const localId = byRemote.get(key(sessionId, remoteId))
+        if (localId === undefined) return
+        bind(sessionId, localId, remoteId, true)
+      }
+      const reconcile = (sessionId, remoteIds) => {
+        const locals = sidebar.openTabs.getSnapshot().filter(item => item.sessionId === sessionId && item.kind === KIND)
+        const desired = new Set(remoteIds)
+        // Reuse an existing local id when it already is the host id (normal
+        // refresh and tabs created by this device).
+        for (const tab of locals) {
+          if (byLocal.has(key(sessionId, tab.tabId)) || !desired.has(tab.tabId)) continue
+          bind(sessionId, tab.tabId, tab.tabId, true)
+        }
+        for (const remoteId of remoteIds) {
+          const localId = byRemote.get(key(sessionId, remoteId))
+          if (localId !== undefined && locals.some(tab => tab.tabId === localId)) { markKnown(sessionId, remoteId); continue }
+          if (localId !== undefined) forgetRemote(sessionId, remoteId)
+          bind(sessionId, openLocalTab(sidebar, sessionId), remoteId, true)
+        }
+        // Only identities already acknowledged by the host are stale. A newly
+        // clicked local tab may not have opened its panel WebSocket yet.
+        for (const item of [...byLocal.values()]) {
+          if (item.sessionId !== sessionId || !item.known || desired.has(item.remoteId)) continue
+          if (sidebar.mounted.getSnapshot() === sessionId && locals.some(tab => tab.tabId === item.localId)) closeLocal(sessionId, item.localId)
+          else forgetRemote(sessionId, item.remoteId)
+        }
+      }
+      return {
+        remoteFor(sessionId, localId) { return byLocal.get(key(sessionId, localId))?.remoteId ?? localId },
+        bind, markKnown, reconcile, forgetLocal,
+      }
+    }
+
+    function createSessionControl(sidebar, identity) {
       let session, ws, timer, attempt = 0, disposed = false
       const results = new Map()
       const send = (socket, value) => { if (socket.readyState === 1) { try { socket.send(JSON.stringify(value)) } catch {} } }
@@ -52,20 +136,24 @@ window.__ModuleLoader__.load({
         socket.onmessage = event => {
           if (disposed || socket !== ws || session !== owner || sidebar.mounted.getSnapshot() !== owner || typeof event.data !== 'string') return
           let message; try { message = JSON.parse(event.data) } catch { return }
+          if (message?.type === 'tabs_sync' && message.sessionId === owner && Array.isArray(message.tabs) && message.tabs.length <= 64) {
+            const remoteIds = [], seen = new Set()
+            for (const tab of message.tabs) {
+              if (!tab || typeof tab.tabId !== 'string' || !tab.tabId || tab.tabId.length > 256 || tab.tabId.includes('\0') || seen.has(tab.tabId)) return
+              seen.add(tab.tabId); remoteIds.push(tab.tabId)
+            }
+            try { identity.reconcile(owner, remoteIds) } catch { /* a later inventory or explicit user action can retry */ }
+            return
+          }
           if (!message || message.type !== 'create_tab' || message.sessionId !== owner || typeof message.requestId !== 'string' || !message.requestId || message.requestId.length > 256) return
           const cached = results.get(message.requestId)
           if (cached) { send(socket, cached); return }
           let result = { type: 'create_tab_result', requestId: message.requestId, sessionId: owner }
           try {
             if (!Number.isSafeInteger(message.expiresAt) || message.expiresAt <= Date.now()) throw Error('Create request expired')
-            const before = new Set(sidebar.openTabs.getSnapshot().filter(item => item.sessionId === owner).map(item => item.tabId))
-            if (sidebar.mounted.getSnapshot() !== owner) throw Error('Session changed')
-            sidebar.openTab(KIND)
-            if (sidebar.mounted.getSnapshot() !== owner) throw Error('Session changed')
-            const added = sidebar.openTabs.getSnapshot().filter(item => item.sessionId === owner && item.kind === KIND && !before.has(item.tabId))
-            const active = sidebar.active()
-            if (added.length !== 1 || !active || active.kind !== KIND || active.id !== added[0].tabId) throw Error('Unable to identify the created tab')
-            result = { ...result, tabId: active.id }
+            const tabId = openLocalTab(sidebar, owner)
+            identity.bind(owner, tabId, tabId)
+            result = { ...result, tabId }
           } catch (error) { result = { ...result, error: String(error?.message || error).slice(0, 240) } }
           results.set(message.requestId, result)
           if (results.size > 256) results.delete(results.keys().next().value)
@@ -89,7 +177,7 @@ window.__ModuleLoader__.load({
       return () => { disposed = true; unsubscribe(); clearTimeout(timer); const old = ws; ws = null; if (old) old.close(1000, 'plugin disposed') }
     }
     // Controllers are keyed by the pair: Sidebar tab ids are only unique within a Session.
-    function createController(sessionId, tabId, forget, reveal) {
+    function createController(sessionId, tabId, remoteIdOf, forget, reveal) {
       let ws, timer, attempt = 0, disposed = false, closing = false, subscribed = false
       let visible = false, permission = null, seq = -1, pending = null, decoding = false
       let canvas = null, state = { connection: 'connecting', url: '', error: '', frame: false, permission: null }
@@ -119,7 +207,7 @@ window.__ModuleLoader__.load({
       }
       const connect = () => {
         if (disposed || ws) return
-        try { ws = new WebSocket(socketUrl(sessionId, tabId)) } catch { retry(); return }
+        try { ws = new WebSocket(socketUrl(sessionId, remoteIdOf())) } catch { retry(); return }
         const socket = ws
         socket.onopen = () => {
           if (socket !== ws || disposed) return
@@ -254,9 +342,14 @@ window.__ModuleLoader__.load({
       apply(ctx) {
         const controllers = new Map()
         const key = (session, tab) => JSON.stringify([session, tab])
+        const remotelyClosed = new Set()
+        const identity = createIdentity(ctx.sidebarRight, (session, tab) => {
+          const id = key(session, tab); remotelyClosed.add(id)
+          try { ctx.sidebarRight.close(tab) } finally { remotelyClosed.delete(id) }
+        })
         const get = (session, tab) => {
           const id = key(session, tab)
-          if (!controllers.has(id)) controllers.set(id, createController(session, tab, () => controllers.delete(id), () => {
+          if (!controllers.has(id)) controllers.set(id, createController(session, tab, () => identity.remoteFor(session, tab), () => { controllers.delete(id); identity.forgetLocal(session, tab) }, () => {
             const sidebar = ctx.sidebarRight
             // Never navigate another Session, or resurrect an already removed tab.
             if (sidebar.mounted.getSnapshot() !== session || !sidebar.openTabs.getSnapshot().some(item => item.sessionId === session && item.tabId === tab && item.kind === KIND)) return
@@ -268,8 +361,15 @@ window.__ModuleLoader__.load({
         const t = ctx.locale.bind('controlledBrowser')
         ctx.effect(() => ctx.locale.register('controlledBrowser', copy), 'controlled-browser.copy')
         ctx.effect(() => ctx.sidebarRightTabs.register({ id: ID, kind: KIND, multiple: true, title: () => t('title'), guide: [{ id: 'new', order: 31, title: () => t('new'), description: () => t('description') }] }), 'controlled-browser.type')
-        ctx.effect(() => ctx.sidebarRight.registerCloseHandler(KIND, (sessionId, tab) => { get(sessionId, tab.id).close() }), 'controlled-browser.close')
-        ctx.effect(() => createSessionControl(ctx.sidebarRight), 'controlled-browser.session-control')
+        ctx.effect(() => ctx.sidebarRight.registerCloseHandler(KIND, (sessionId, tab) => {
+          const id = key(sessionId, tab.id)
+          if (remotelyClosed.has(id)) {
+            controllers.get(id)?.dispose(); controllers.delete(id); identity.forgetLocal(sessionId, tab.id)
+            return
+          }
+          get(sessionId, tab.id).close()
+        }), 'controlled-browser.close')
+        ctx.effect(() => createSessionControl(ctx.sidebarRight, identity), 'controlled-browser.session-control')
         ctx.effect(() => ctx.slots.inject('sidebar.right.pane.tab', () => ctx.slots.register({ name: 'sidebar.right.pane.tab', key: ID, locale: 'controlledBrowser', inject: sessionId => ({ controller: tabId => get(sessionId, tabId) }) }, Body)), 'controlled-browser.body')
         ctx.effect(() => () => { for (const controller of controllers.values()) controller.dispose(); controllers.clear() }, 'controlled-browser.connections')
       }

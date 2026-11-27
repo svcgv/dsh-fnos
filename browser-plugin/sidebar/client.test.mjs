@@ -3,11 +3,17 @@ import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import vm from 'node:vm'
 
-async function fixture(react = {}) {
+function createStorage() {
+  const values = new Map()
+  return { getItem: key => values.has(key) ? values.get(key) : null, setItem: (key, value) => values.set(key, String(value)), removeItem: key => values.delete(key) }
+}
+
+async function fixture(react = {}, options = {}) {
   const code = await readFile(new URL('./client.js', import.meta.url), 'utf8')
   let factory, body, inject, close, definition
   const sockets = [], tabs = [], actions = []
-  let mounted, expanded = false, active, serial = 0
+  tabs.push(...(options.restoredTabs ?? []))
+  let mounted, expanded = false, active, serial = options.serial ?? 0
   const mountedListeners = new Set(), cleanups = []
   class Socket {
     constructor(url) { this.url = url; this.readyState = 0; this.sent = []; sockets.push(this) }
@@ -15,7 +21,8 @@ async function fixture(react = {}) {
     send(value) { this.sent.push(JSON.parse(value)) }
     close() { this.readyState = 3; this.onclose?.() }
   }
-  const context = { window: { location: { href: 'https://example.test/gateway/workspace/' }, __ModuleLoader__: { load: value => { factory = value.factory; assert.equal(value.id, '@dsh-fnos/controlled-browser-sidebar') } } }, document: { baseURI: 'https://example.test/gateway/workspace/' }, URL, WebSocket: Socket, setTimeout, clearTimeout, Math, JSON, TextEncoder }
+  const storage = options.storage ?? createStorage()
+  const context = { window: { location: { href: 'https://example.test/gateway/workspace/' }, __ModuleLoader__: { load: value => { factory = value.factory; assert.equal(value.id, '@dsh-fnos/controlled-browser-sidebar') } } }, document: { baseURI: 'https://example.test/gateway/workspace/' }, localStorage: storage, URL, WebSocket: Socket, setTimeout, clearTimeout, Math, JSON, TextEncoder }
   vm.runInNewContext(code, context)
   const plugin = factory(() => react)
   const ctx = {
@@ -26,6 +33,7 @@ async function fixture(react = {}) {
       mounted: { getSnapshot: () => mounted, subscribe: fn => { mountedListeners.add(fn); return () => mountedListeners.delete(fn) } },
       openTabs: { getSnapshot: () => tabs },
       openTab: kind => { const tabId = `tab-${++serial}`; active = { id: tabId, kind }; tabs.push({ sessionId: mounted, tabId, kind }); expanded = true; actions.push(['open', mounted, tabId]) },
+      close: tabId => { const index = tabs.findIndex(item => item.sessionId === mounted && item.tabId === tabId); if (index < 0) return; const [tab] = tabs.splice(index, 1); close?.(mounted, { ...tab, id: tabId }); if (active?.id === tabId) active = tabs.filter(item => item.sessionId === mounted).at(-1); actions.push(['close', mounted, tabId]) },
       active: () => active,
       isExpanded: () => expanded,
       toggleExpanded: () => { expanded = !expanded; actions.push(['expand', mounted]) },
@@ -35,7 +43,7 @@ async function fixture(react = {}) {
     effect: fn => { const cleanup = fn(); if (typeof cleanup === 'function') cleanups.push(cleanup) }
   }
   plugin.apply(ctx)
-  return { sockets, definition, body, inject, close, tabs, actions, sidebar: ctx.sidebarRight, dispose: () => cleanups.reverse().forEach(fn => fn()), setMounted: value => { mounted = value; mountedListeners.forEach(fn => fn()) }, setExpanded: value => { expanded = value } }
+  return { sockets, definition, body, inject, close, tabs, actions, storage, sidebar: ctx.sidebarRight, dispose: () => cleanups.reverse().forEach(fn => fn()), setMounted: value => { mounted = value; mountedListeners.forEach(fn => fn()) }, setExpanded: value => { expanded = value } }
 }
 
 test('multi-instance type and session-scoped websocket identity', async () => {
@@ -185,6 +193,43 @@ test('creation fails closed if sidebar identity is ambiguous or not mounted', as
   assert.equal(socket.sent[0].tabId, undefined)
   f.setMounted(undefined)
   assert.equal(socket.readyState, 3)
+  f.dispose()
+})
+
+test('second device restores host tabs and keeps identity across refresh', async () => {
+  const storage = createStorage()
+  const first = await fixture({}, { storage, restoredTabs: [{ sessionId: 'A', tabId: 'tab-1', kind: 'other' }], serial: 1 })
+  first.setMounted('A')
+  const control = first.sockets[0]; control.open()
+  const inventory = { type: 'tabs_sync', sessionId: 'A', tabs: [{ tabId: 'tab-9' }] }
+  control.onmessage({ data: JSON.stringify(inventory) })
+  const local = first.tabs.find(item => item.sessionId === 'A' && item.kind === 'controlled-browser')?.tabId
+  assert.equal(local, 'tab-2')
+  const controller = first.inject('A').controller(local); controller.start()
+  assert.equal(new URL(first.sockets.at(-1).url).searchParams.get('tabId'), 'tab-9')
+  first.dispose()
+
+  const second = await fixture({}, { storage, restoredTabs: [{ sessionId: 'A', tabId: 'tab-1', kind: 'other' }, { sessionId: 'A', tabId: local, kind: 'controlled-browser' }], serial: 2 })
+  second.setMounted('A')
+  const refreshed = second.sockets[0]; refreshed.open()
+  refreshed.onmessage({ data: JSON.stringify(inventory) })
+  assert.equal(second.tabs.filter(item => item.sessionId === 'A' && item.kind === 'controlled-browser').length, 1)
+  const restored = second.inject('A').controller(local); restored.start()
+  assert.equal(new URL(second.sockets.at(-1).url).searchParams.get('tabId'), 'tab-9')
+  refreshed.onmessage({ data: JSON.stringify({ type: 'tabs_sync', sessionId: 'A', tabs: [] }) })
+  assert.equal(second.tabs.some(item => item.sessionId === 'A' && item.tabId === local), false)
+  second.dispose()
+})
+
+test('remote close before panel connection does not recreate the host tab', async () => {
+  const f = await fixture(); f.setMounted('A')
+  const control = f.sockets[0]; control.open()
+  control.onmessage({ data: JSON.stringify({ type: 'tabs_sync', sessionId: 'A', tabs: [{ tabId: 'one' }] }) })
+  assert.equal(f.tabs.filter(item => item.sessionId === 'A' && item.kind === 'controlled-browser').length, 1)
+  const before = f.sockets.length
+  control.onmessage({ data: JSON.stringify({ type: 'tabs_sync', sessionId: 'A', tabs: [] }) })
+  assert.equal(f.tabs.filter(item => item.sessionId === 'A' && item.kind === 'controlled-browser').length, 0)
+  assert.equal(f.sockets.length, before, 'a remotely closed tab must not reconnect and recreate itself')
   f.dispose()
 })
 

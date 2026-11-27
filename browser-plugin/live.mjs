@@ -579,9 +579,26 @@ export async function activate(ctx, { env = process.env, load = loadHostDeps, wo
       if (tabs.size >= MAX_TABS) throw new Error(`受控浏览器标签最多 ${MAX_TABS} 个，请先关闭其他标签`)
       tab = { sessionId, tabId, browser: new LiveBrowser(logger, mode, workerFactory, workerSlots) }
       tabs.set(key, tab)
+      broadcastInventory(sessionId)
     }
     if (!tab) throw new Error('浏览器标签不存在')
     return tab
+  }
+
+  // Sidebar layout is browser-local. Keep every connected device's controlled
+  // browser inventory aligned with the session-owned host registry instead.
+  function broadcastInventory(sessionId) {
+    const message = JSON.stringify({
+      type: 'tabs_sync',
+      sessionId,
+      tabs: [...tabs.values()]
+        .filter(tab => tab.sessionId === sessionId)
+        .map(tab => ({ tabId: tab.tabId, ...tab.browser.state })),
+    })
+    for (const control of controls) {
+      if (control.sessionId !== sessionId || control.connection.closed) continue
+      try { control.connection.sendText(message) } catch { /* a dead viewer is dropped elsewhere */ }
+    }
   }
 
   // A control connection is bound to the exact live Agent object at admission.
@@ -600,6 +617,7 @@ export async function activate(ctx, { env = process.env, load = loadHostDeps, wo
     try { connection = acceptWebSocket(req, socket, head) } catch { return }
     const control = { connection, sessionId, agent }
     controls.add(control)
+    broadcastInventory(sessionId)
     connection.onMessage(text => {
       let message
       try { message = JSON.parse(text) } catch { return }
@@ -706,6 +724,7 @@ export async function activate(ctx, { env = process.env, load = loadHostDeps, wo
       if (!sessionAgent(tab.sessionId) || tabs.get(keyOf(tab.sessionId, tab.tabId)) !== tab) { connection.close(); return }
       if (message.type === 'close') {
         tabs.delete(keyOf(tab.sessionId, tab.tabId))
+        broadcastInventory(tab.sessionId)
         void browser.dispose().catch(error => logger.warn('browser-live-dispose-failed', { error: String(error) }))
       } else if (['navigate', 'back', 'forward', 'reload'].includes(message.type)) {
         browser.userNavigate(message.type, message.url).catch(error => sendJson(connection, { type: 'error', message: String(error?.message ?? error) }))

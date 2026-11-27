@@ -95,3 +95,28 @@ test('model-created tab becomes usable only after its sidebar connection arrives
   assert.equal(JSON.parse((await navigation).content[0].text).url, 'https://example.com/')
   panel.message({ type: 'close' }); control.destroy()
 })
+
+test('control clients receive existing and changed tab inventory', async () => {
+  const agent = { id: 'a', session: { id: 'a' } }
+  const upgrades = new Map()
+  const ctx = {
+    logger: { warn() {} },
+    connection: { admit() { return { peer: { principal: { kind: 'owner' } } } } },
+    agents: { get: id => id === 'a' ? agent : undefined, list: () => [agent] },
+    webServer: { register: () => () => {}, registerUpgrade: x => { upgrades.set(x.path, x.handler); return () => {} } }, effect() {}, on() {},
+  }
+  const load = async () => ({ createScope: () => ({ ctx: { effect() {}, tools: { register() {} } }, dispose: async () => {} }), createMcpToolDefinition: (_, def) => def })
+  const workerFactory = () => ({ async request() { return {} }, async stop() {} })
+  await activate(ctx, { env: { DSH_FNOS_BROWSER_LIVE: '1', DSH_FNOS_BROWSER_NETWORK: '1' }, load, workerFactory })
+  const connect = (path, query) => { const socket = new Socket(); upgrades.get(path)({ url: `${path}?${query}`, headers: { 'sec-websocket-key': Buffer.alloc(16).toString('base64'), 'sec-websocket-version': '13' } }, socket, Buffer.alloc(0)); return socket }
+  const panel = connect('/browser-live/ws', 'sessionId=a&tabId=one')
+  const first = connect('/browser-live/control', 'sessionId=a')
+  const second = connect('/browser-live/control', 'sessionId=a')
+  const inventory = socket => socket.messages().filter(message => message.type === 'tabs_sync').at(-1)
+  assert.deepEqual(inventory(first)?.tabs.map(tab => tab.tabId), ['one'])
+  assert.deepEqual(inventory(second)?.tabs.map(tab => tab.tabId), ['one'])
+  panel.message({ type: 'close' }); await tick()
+  assert.deepEqual(inventory(first)?.tabs, [])
+  assert.deepEqual(inventory(second)?.tabs, [])
+  first.destroy(); second.destroy()
+})

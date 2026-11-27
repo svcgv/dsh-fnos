@@ -14,6 +14,7 @@
 - 工具：`browser_live_control`。
 - 动作：`list_tabs`（列出当前会话的标签及各自 URL/标题/加载状态）、`navigate`、`snapshot`、`click`、`fill`、`screenshot`、`diagnostics`；除 `list_tabs` 外都必须带 `tabId`，缺失或歧义时工具报错并提示先列出标签。
 - 每个右栏标签使用独立的 WebSocket（`browser-live/ws?sessionId=…&tabId=…`）和独立浏览器进程，画面、地址栏、访问授权与输入互不串扰；关闭标签会释放对应 worker，收起或切换到其他标签只暂停画面订阅。
+- 同一会话在另一台设备打开时会从服务端恢复已有受控浏览器标签，并连接原 worker；任一设备关闭标签后，其他设备的对应标签也会关闭。跨设备同步随受控浏览器功能默认启用，不需要额外开关。
 - `navigate` 支持本机、局域网和公网 HTTP/HTTPS 地址，包括 localhost、IP 和自定义端口。
 - 每次模型调用 `navigate`，目标标签都会显示访问申请与完整 URL，必须点击「允许本次访问」才会导航；点击「拒绝」或超时则不会访问该 URL。
 - 在同一标签内，模型和用户操作的是同一个页面。用户可以直接在画面里点击、滚动、输入，模型可以读取页面结构和操作元素。

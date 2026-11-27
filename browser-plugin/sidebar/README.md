@@ -2,11 +2,13 @@
 
 本目录是独立 DSH Client 插件，需由 Host patch 加载 `index.mjs`，并由同一应用提供 `browser-live/ws`。不会部署或修改用户 profile。它与原有 `panel/` 是不同的 UI；不应同时启用两者作为同一实例的视图。
 
-右侧栏 guide 的“新建受控浏览器”创建 `multiple: true` 标签。Client 从右栏 slot 的 session 注入取得会话 ID，从 `useTabInfo().tab.id` 取得该会话内的标签 ID；以二者组合作为身份。每个标签一条同源 WebSocket，页面目录相对地址 `browser-live/ws?sessionId=…&tabId=…`，适配反向代理前缀。ID 仅用于路由，不是授权凭据：服务端必须独立验证用户、session 和来源。
+右侧栏 guide 的“新建受控浏览器”创建 `multiple: true` 标签。Client 从右栏 slot 的 session 注入取得会话 ID，从 `useTabInfo().tab.id` 取得该会话内的标签 ID；以二者组合作为本地身份。每个标签一条同源 WebSocket，页面目录相对地址 `browser-live/ws?sessionId=…&tabId=…`，适配反向代理前缀。ID 仅用于路由，不是授权凭据：服务端必须独立验证用户、session 和来源。
+
+右栏布局默认只保存在当前浏览器的 `localStorage`，因此跨设备恢复不能依赖它。控制连接接入和标签增删时，Host 通过 `tabs_sync` 广播该 session 的服务端标签清单；Client 为缺失的远端标签打开本地右栏标签，并持久化“远端 tabId → 本地 tabId”路由映射。这样 A 设备创建或刷新的标签能在 B 设备直接连接到同一个 worker，而不是新建浏览器；任一设备显式关闭后，其他设备也会关闭对应本地标签。该同步默认启用，不需要额外配置。远端关闭不会触发反向重连，避免重新创建已删除的标签。
 
 插件根 effect 订阅 `sidebarRight.mounted`，为当前屏幕上的 session 保持独立的 `browser-live/control?sessionId=…` WebSocket，即使没有浏览器标签、右栏收起也保持连接。切换会话或插件卸载时关闭，断线指数退避重连；未显示的会话无控制通道。Host 选定单个同 session 连接发送 `{type:'create_tab',sessionId,requestId,expiresAt}`（Unix 毫秒），Client 只接受匹配当前 session 且未过期的请求；同步调用公开的 `openTab`，从同步更新的 inventory 新增集与 `active()` 双重校验得到真实 tabId，再以 `create_tab_result` 返回 tabId 或 error。同一连接重复 requestId 返回缓存，切会话清空。多个窗口或网络断线下，Host 不应自动重试不确定结果；创建已提交但响应丢失、同步重入导致无法唯一识别时，可能留下用户可见的标签。控制连接必须与现有 WS 使用相同鉴权及来源检查，sessionId 不是授权凭据。
 
-连接后依据可见状态发送 `subscribe`/`unsubscribe`；切换、收起、页面组件卸载、暂时断线及插件卸载不应释放服务端实例。每个标签显式关闭时发送 `close`；未连接时会先重连再发送。WebSocket 无 close 确认机制，因此发送成功不保证服务端已处理；整页关闭或进程退出时待发送的关闭消息也可能丢失，服务端应有资源清理策略。地址栏只允许无凭据的 HTTP(S)，手动导航发送 `navigate`；按钮发送 `back`、`forward`、`reload`。图像、输入和权限消息使用原有 live 协议。标签不可见时停止订阅；远端画面聚焦时才转发键盘和粘贴。
+连接后依据可见状态发送 `subscribe`/`unsubscribe`；切换、收起、页面组件卸载、暂时断线及插件卸载不应释放服务端实例。控制连接只同步当前屏幕 session 的清单；切换到另一 session 时才连接该 session 的控制通道。每个标签显式关闭时发送 `close`；未连接时会先重连再发送。WebSocket 无 close 确认机制，因此发送成功不保证服务端已处理；整页关闭或进程退出时待发送的关闭消息也可能丢失，服务端应有资源清理策略。地址栏只允许无凭据的 HTTP(S)，手动导航发送 `navigate`；按钮发送 `back`、`forward`、`reload`。图像、输入和权限消息使用原有 live 协议。标签不可见时停止订阅；远端画面聚焦时才转发键盘和粘贴。
 
 ## 自测
 
